@@ -792,95 +792,6 @@ function calculateGrandTotal() {
     return top180.reduce((sum, boss) => sum + boss.adjustedValue, 0);
 }
 
-function showOverflowBosses() {
-    const allBosses = getAllBossesWithValues();
-    const totalCount = allBosses.length;
-    
-    if (totalCount <= 180) {
-        return;
-    }
-    
-    const overflowBosses = allBosses.slice(180);
-    const overflowCount = overflowBosses.length;
-    
-    // Create overlay
-    const overlay = document.createElement('div');
-    overlay.className = 'overflow-tooltip-overlay';
-    overlay.onclick = closeOverflowTooltip;
-    
-    // Create tooltip
-    const tooltip = document.createElement('div');
-    tooltip.className = 'overflow-tooltip';
-    tooltip.id = 'overflowTooltip';
-    
-    let content = `
-        <h3>⚠️ Overflow Bosses (${overflowCount} not counted)</h3>
-        <p style="margin-bottom: 15px; color: #999;">These bosses are NOT included in your grand total because they fall outside the top 180:</p>
-    `;
-    
-    // Group overflow bosses by boss name and difficulty
-    const groupedBosses = {};
-    overflowBosses.forEach(boss => {
-        const key = `${boss.baseName}|${boss.difficulty}`;
-        if (!groupedBosses[key]) {
-            groupedBosses[key] = {
-                baseName: boss.baseName,
-                difficulty: boss.difficulty,
-                instances: []
-            };
-        }
-        groupedBosses[key].instances.push({
-            characterName: boss.characterName,
-            partyCount: boss.partyCount,
-            adjustedValue: boss.adjustedValue
-        });
-    });
-    
-    const uniqueCount = Object.keys(groupedBosses).length;
-    content = `
-        <h3>⚠️ Overflow Bosses (${overflowCount} instances, ${uniqueCount} unique)</h3>
-        <p style="margin-bottom: 15px; color: #999;">These bosses are NOT included in your grand total because they fall outside the top 180:</p>
-    `;
-    
-    let index = 1;
-    Object.values(groupedBosses).forEach(group => {
-        content += `
-            <div class="overflow-boss-item">
-                <div class="overflow-boss-name">${index}. ${group.baseName} (${group.difficulty}) ${group.instances.length > 1 ? `× ${group.instances.length}` : ''}</div>
-        `;
-        
-        group.instances.forEach(instance => {
-            content += `
-                <div class="overflow-boss-details">
-                    • ${instance.characterName} | Party: ${instance.partyCount} | Value: ${formatValue(instance.adjustedValue)}
-                </div>
-            `;
-        });
-        
-        content += `</div>`;
-        index++;
-    });
-    
-    content += `
-        <div class="overflow-tip">
-            💡 <strong>Tip:</strong> Consider removing lower-value bosses to optimize your top 180.
-        </div>
-        <button class="overflow-close-btn" onclick="closeOverflowTooltip()">Close</button>
-    `;
-    
-    tooltip.innerHTML = content;
-    
-    document.body.appendChild(overlay);
-    document.body.appendChild(tooltip);
-}
-
-function closeOverflowTooltip() {
-    const overlay = document.querySelector('.overflow-tooltip-overlay');
-    const tooltip = document.getElementById('overflowTooltip');
-    if (overlay) overlay.remove();
-    if (tooltip) tooltip.remove();
-}
-
 function formatValue(total) {
     if (total >= 1000) {
         return `${(total / 1000).toFixed(2)}B`;
@@ -937,7 +848,7 @@ function renderMainContent() {
                ${totalBossCount > 180 ? `
                <div class="boss-limit-warning">
                    <strong>⚠️ Global Limit:</strong> You have selected ${totalBossCount} bosses across all characters. Only the top 180 highest-value bosses are counted in the grand total.
-                   <a href="#" onclick="event.preventDefault(); showOverflowBosses();" style="display: block; margin-top: 8px; color: #667eea; text-decoration: underline; cursor: pointer; font-weight: 600;">Tell me more</a>
+                   <a href="#" onclick="event.preventDefault(); document.querySelector('[onclick*=sellingStrategy]').click();" style="display: block; margin-top: 8px; color: #667eea; text-decoration: underline; cursor: pointer; font-weight: 600;">Tell me more</a>
                </div>
                ` : ''}
                 
