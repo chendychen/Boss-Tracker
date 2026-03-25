@@ -424,7 +424,7 @@ function updateBossPartyCount(bossBaseName, count) {
         const partyCount = Math.max(1, Math.min(6, parseInt(count) || 1));
         character.bossPartyCount[bossBaseName] = partyCount;
         saveToLocalStorage();
-        updateBossItemState(bossBaseName);
+        refreshBossContainer();
         updateSummaryPanel();
         renderCharacterTabs();
     }
@@ -439,7 +439,7 @@ function updateBossDifficulty(bossBaseName, difficulty) {
     if (character) {
         character.bossDifficulty[bossBaseName] = difficulty;
         saveToLocalStorage();
-        updateBossItemState(bossBaseName);
+        refreshBossContainer();
         updateSummaryPanel();
         renderCharacterTabs();
     }
@@ -529,10 +529,16 @@ function renderBosses(filter = '') {
     const character = getActiveCharacter();
     if (!character) return '';
 
-    const filteredBosses = bossData.filter(boss =>
-        boss.baseName.toLowerCase().includes(filter.toLowerCase())
-    );
-    
+    const filteredBosses = bossData
+        .filter(boss => boss.baseName.toLowerCase().includes(filter.toLowerCase()))
+        .sort((a, b) => {
+            const diffA = getBossDifficulty(character, a.baseName);
+            const diffB = getBossDifficulty(character, b.baseName);
+            const partyA = getBossPartyCount(character, a.baseName);
+            const partyB = getBossPartyCount(character, b.baseName);
+            return (getBossValue(b.baseName, diffB) / partyB) - (getBossValue(a.baseName, diffA) / partyA);
+        });
+
     return filteredBosses.map(boss => {
         const isSelected = character.selectedBosses.has(boss.baseName);
         const partyCount = getBossPartyCount(character, boss.baseName);
@@ -576,6 +582,16 @@ function renderBosses(filter = '') {
     }).join('');
 }
 
+function refreshBossContainer() {
+    const container = document.getElementById('bossContainer');
+    if (!container) return;
+    const searchValue = document.getElementById('searchBox')?.value || '';
+    const bossListElement = document.querySelector('.boss-list');
+    const savedScroll = bossListElement ? bossListElement.scrollTop : 0;
+    container.innerHTML = renderBosses(searchValue);
+    if (bossListElement) bossListElement.scrollTop = savedScroll;
+}
+
 function toggleBoss(bossBaseName) {
     const character = getActiveCharacter();
     if (!character) return;
@@ -587,9 +603,8 @@ function toggleBoss(bossBaseName) {
     }
     
     saveToLocalStorage();
-    
-    // Update only the necessary parts without full re-render
-    updateBossItemState(bossBaseName);
+
+    refreshBossContainer();
     updateSummaryPanel();
     renderCharacterTabs();
 }
