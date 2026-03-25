@@ -1,0 +1,51 @@
+{
+  "bosses": [
+    { "name": "Extreme Black Mage", "price": "18B", "value": 18000 },
+    { "name": "Extreme Kaling", "price": "6.03B", "value": 6030 },
+    { "name": "Extreme First Adversary", "price": "5.88B", "value": 5880 },
+    { "name": "Extreme Kalos the Guardian", "price": "5.2B", "value": 5200 },
+    { "name": "Hard Black Mage", "price": "4.5B", "value": 4500 },
+    { "name": "Extreme Chosen Seren", "price": "4.24B", "value": 4240 },
+    { "name": "Hard Baldrix", "price": "4.2B", "value": 4200 },
+    { "name": "Hard Limbo", "price": "3.75B", "value": 3750 },
+    { "name": "Hard Kaling", "price": "2.99B", "value": 2990 },
+    { "name": "Hard First Adversary", "price": "2.94B", "value": 2940 },
+    { "name": "Normal Baldrix", "price": "2.8B", "value": 2800 },
+    { "name": "Chaos Kalos the Guardian", "price": "2.6B", "value": 2600 },
+    { "name": "Normal Limbo", "price": "2.1B", "value": 2100 },
+    { "name": "Normal Kaling", "price": "1.51B", "value": 1510 },
+    { "name": "Extreme Lotus", "price": "1.4B", "value": 1400 },
+    { "name": "Normal First Adversary", "price": "1.37B", "value": 1370 },
+    { "name": "Normal Kalos the Guardian", "price": "1.3B", "value": 1300 },
+    { "name": "Hard Chosen Seren", "price": "1.1B", "value": 1100 },
+    { "name": "Easy Kaling", "price": "1.03B", "value": 1030 },
+    { "name": "Easy First Adversary", "price": "985M", "value": 985 },
+    { "name": "Easy Kalos the Guardian", "price": "937.5M", "value": 937.5 },
+    { "name": "Normal Chosen Seren", "price": "889.02M", "value": 889.02 },
+    { "name": "Hard Verus Hilla", "price": "762.11M", "value": 762.11 },
+    { "name": "Hard Darknell", "price": "667.92M", "value": 667.92 },
+    { "name": "Hard Will", "price": "621.81M", "value": 621.81 },
+    { "name": "Chaos Guardian Angel Slime", "price": "600.58M", "value": 600.58 },
+    { "name": "Normal Verus Hilla", "price": "581.88M", "value": 581.88 },
+    { "name": "Chaos Gloom", "price": "563.95M", "value": 563.95 },
+    { "name": "Hard Lucid", "price": "501M", "value": 501 },
+    { "name": "Hard Damien", "price": "421.88M", "value": 421.88 },
+    { "name": "Hard Lotus", "price": "414.68M", "value": 414.68 }
+  ],
+  "pitchedGear": [
+    "Berserked",
+    "Magic Eyepatch",
+    {
+      "name": "Black Heart / Total Control",
+      "subOptions": ["Using TC", "Using BH"]
+    },
+    "Dreamy Belt",
+    "Source of Suffering",
+    "Genesis Badge",
+    "Commanding Force Earring",
+    "Endless Terror",
+    "Cursed Spellbook",
+    "Mitra's Rage"
+  ],
+  "noSparesItems": ["Cursed Spellbook", "Genesis Badge", "Mitra's Rage"]
+}
