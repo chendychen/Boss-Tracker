@@ -29,7 +29,7 @@ const GAME_DATA = {
         { "name": "Chaos Gloom", "price": "563.95M", "value": 563.95 },
         { "name": "Hard Lucid", "price": "501M", "value": 501 },
         { "name": "Hard Damien", "price": "421.88M", "value": 421.88 },
-        { "name": "Hard Lotus", "price": "414.68M", "value": 414.68 }
+        { "name": "Hard Lotus", "price": "414.68M", "value": 444.68 }
     ],
     "pitchedGear": [
         "Berserked",
