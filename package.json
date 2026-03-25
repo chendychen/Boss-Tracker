@@ -1,0 +1,7 @@
+{
+  "name": "boss-tracker",
+  "type": "module",
+  "scripts": {
+    "test": "\"C:/Program Files/nodejs/node.exe\" --test tests/"
+  }
+}
