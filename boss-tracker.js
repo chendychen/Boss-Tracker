@@ -1728,55 +1728,62 @@ function renderSellingStrategy() {
         return;
     }
 
+    const allBosses = getAllBossesWithValues(); // sorted by adjustedValue desc
+    const globalLimitHit = allBosses.length > 180;
+
+    // Build a set of overflow boss keys: "characterId:baseName"
+    const overflowKeys = new Set();
+    if (globalLimitHit) {
+        allBosses.slice(180).forEach(b => overflowKeys.add(`${b.characterId}:${b.baseName}`));
+    } else {
+        // Per-character: bosses ranked 15+ for each character
+        characters.forEach(char => {
+            const charBosses = allBosses.filter(b => b.characterId === char.id);
+            charBosses.slice(14).forEach(b => overflowKeys.add(`${b.characterId}:${b.baseName}`));
+        });
+    }
+
+    const limitLabel = globalLimitHit ? 'global 180-crystal limit' : 'per-character 14-crystal limit';
+
     const rows = characters.map(char => {
-        if (!char.selectedBosses || char.selectedBosses.size === 0) {
-            return `
-                <div style="background: #0f3460; border-radius: 10px; padding: 20px; margin-bottom: 16px;">
-                    <div style="color: #667eea; font-size: 1.2em; font-weight: 700; margin-bottom: 8px;">${sanitizeInput(char.name)}</div>
-                    <div style="color: #666; font-style: italic;">No bosses selected.</div>
-                </div>`;
-        }
+        const overflow = allBosses.filter(b =>
+            b.characterId === char.id && overflowKeys.has(`${char.id}:${b.baseName}`)
+        );
+        if (overflow.length === 0) return '';
 
-        const allBosses = Array.from(char.selectedBosses).map(baseName => {
-            const difficulty = getBossDifficulty(char, baseName);
-            const partyCount = getBossPartyCount(char, baseName);
-            const adjustedValue = getBossValue(baseName, difficulty) / partyCount;
-            return { baseName, difficulty, partyCount, adjustedValue };
-        }).sort((a, b) => b.adjustedValue - a.adjustedValue);
-
-        const overflow = allBosses.slice(14);
-
-        const overflowHTML = overflow.length === 0
-            ? '<div style="color: #2ecc71; font-style: italic;">All crystals count — nothing to drop.</div>'
-            : overflow.map(boss => `
-                <div style="display: flex; justify-content: space-between; align-items: center;
-                            background: #16213e; border-left: 3px solid #e94560;
-                            border-radius: 6px; padding: 10px 14px; margin-bottom: 6px;">
-                    <span style="color: #e0e0e0; font-weight: 600;">
-                        ${sanitizeInput(boss.difficulty)} ${sanitizeInput(boss.baseName)}
-                        ${boss.partyCount > 1 ? `<span style="color: #999; font-size: 0.85em;">(party ${boss.partyCount})</span>` : ''}
-                    </span>
-                    <span style="color: #e94560; font-weight: bold;">${formatValue(boss.adjustedValue)}</span>
-                </div>`).join('');
+        const bossItems = overflow.map(boss => `
+            <div style="display: flex; justify-content: space-between; align-items: center;
+                        background: #16213e; border-left: 3px solid #e94560;
+                        border-radius: 6px; padding: 10px 14px; margin-bottom: 6px;">
+                <span style="color: #e0e0e0; font-weight: 600;">
+                    ${sanitizeInput(boss.difficulty)} ${sanitizeInput(boss.baseName)}
+                    ${boss.partyCount > 1 ? `<span style="color: #999; font-size: 0.85em;">(party ${boss.partyCount})</span>` : ''}
+                </span>
+                <span style="color: #e94560; font-weight: bold;">${formatValue(boss.adjustedValue)}</span>
+            </div>`).join('');
 
         return `
             <div style="background: #0f3460; border-radius: 10px; padding: 20px; margin-bottom: 16px;">
-                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px;">
                     <div style="color: #667eea; font-size: 1.2em; font-weight: 700;">${sanitizeInput(char.name)}</div>
-                    <div style="color: #999; font-size: 0.9em;">${char.selectedBosses.size} bosses selected &mdash; top 14 count</div>
+                    <div style="color: #999; font-size: 0.9em;">${overflow.length} crystal${overflow.length > 1 ? 's' : ''} to drop</div>
                 </div>
-                ${overflow.length > 0 ? `<div style="color: #ffb347; font-size: 0.9em; margin-bottom: 10px;">
-                    ⚠️ Drop these <strong>${overflow.length}</strong> crystal${overflow.length > 1 ? 's' : ''} — they don't count toward your weekly total:
-                </div>` : ''}
-                ${overflowHTML}
+                <div style="color: #ffb347; font-size: 0.9em; margin-bottom: 10px;">
+                    ⚠️ Skip selling these — overflow under the ${limitLabel}:
+                </div>
+                ${bossItems}
             </div>`;
-    }).join('');
+    }).filter(Boolean).join('');
+
+    const bodyContent = rows.length > 0
+        ? rows
+        : '<div style="color: #2ecc71; text-align: center; padding: 40px; font-size: 1.1em;">All crystals count — nothing to drop across any character.</div>';
 
     container.innerHTML = `
         <div style="padding: 30px;">
             <h2 style="color: #e94560; margin-bottom: 6px; font-size: 1.6em;">💰 Selling Strategy</h2>
-            <p style="color: #999; margin-bottom: 24px;">Crystals listed below are overflow — skip selling these to save time.</p>
-            ${rows}
+            <p style="color: #999; margin-bottom: 24px;">Based on the ${limitLabel}. Only characters with overflow crystals are shown.</p>
+            ${bodyContent}
         </div>`;
 }
 
