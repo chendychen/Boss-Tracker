@@ -1745,44 +1745,45 @@ function renderSellingStrategy() {
 
     const limitLabel = globalLimitHit ? 'global 180-crystal limit' : 'per-character 14-crystal limit';
 
-    const rows = characters.map(char => {
-        const overflow = allBosses.filter(b =>
-            b.characterId === char.id && overflowKeys.has(`${char.id}:${b.baseName}`)
-        );
-        if (overflow.length === 0) return '';
+    // Group overflow by "difficulty baseName" boss label
+    const byBoss = {};
+    allBosses.forEach(b => {
+        if (!overflowKeys.has(`${b.characterId}:${b.baseName}`)) return;
+        const label = `${b.difficulty} ${b.baseName}`;
+        if (!byBoss[label]) byBoss[label] = { label, adjustedValue: b.adjustedValue, chars: [] };
+        byBoss[label].chars.push({ name: b.characterName, partyCount: b.partyCount });
+    });
 
-        const bossItems = overflow.map(boss => `
-            <div style="display: flex; justify-content: space-between; align-items: center;
-                        background: #16213e; border-left: 3px solid #e94560;
-                        border-radius: 6px; padding: 10px 14px; margin-bottom: 6px;">
-                <span style="color: #e0e0e0; font-weight: 600;">
-                    ${sanitizeInput(boss.difficulty)} ${sanitizeInput(boss.baseName)}
-                    ${boss.partyCount > 1 ? `<span style="color: #999; font-size: 0.85em;">(party ${boss.partyCount})</span>` : ''}
-                </span>
-                <span style="color: #e94560; font-weight: bold;">${formatValue(boss.adjustedValue)}</span>
-            </div>`).join('');
+    // Sort groups by adjustedValue descending
+    const groups = Object.values(byBoss).sort((a, b) => b.adjustedValue - a.adjustedValue);
+
+    const rows = groups.map(group => {
+        const charTags = group.chars.map(c =>
+            `<span style="background: #1a1a2e; color: #e0e0e0; border-radius: 4px; padding: 3px 8px; font-size: 0.85em;">
+                ${sanitizeInput(c.name)}${c.partyCount > 1 ? ` <span style="color:#999;">×${c.partyCount}</span>` : ''}
+            </span>`
+        ).join('');
 
         return `
-            <div style="background: #0f3460; border-radius: 10px; padding: 20px; margin-bottom: 16px;">
-                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px;">
-                    <div style="color: #667eea; font-size: 1.2em; font-weight: 700;">${sanitizeInput(char.name)}</div>
-                    <div style="color: #999; font-size: 0.9em;">${overflow.length} crystal${overflow.length > 1 ? 's' : ''} to drop</div>
+            <div style="display: flex; justify-content: space-between; align-items: center;
+                        background: #0f3460; border-left: 3px solid #e94560;
+                        border-radius: 8px; padding: 10px 16px; margin-bottom: 8px; gap: 12px;">
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1;">
+                    <span style="color: #e0e0e0; font-weight: 700; white-space: nowrap;">${sanitizeInput(group.label)}</span>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">${charTags}</div>
                 </div>
-                <div style="color: #ffb347; font-size: 0.9em; margin-bottom: 10px;">
-                    ⚠️ Skip selling these — overflow under the ${limitLabel}:
-                </div>
-                ${bossItems}
+                <span style="color: #e94560; font-weight: bold; white-space: nowrap;">${formatValue(group.adjustedValue)}</span>
             </div>`;
-    }).filter(Boolean).join('');
+    }).join('');
 
     const bodyContent = rows.length > 0
         ? rows
-        : '<div style="color: #2ecc71; text-align: center; padding: 40px; font-size: 1.1em;">All crystals count — nothing to drop across any character.</div>';
+        : '<div style="color: #2ecc71; text-align: center; padding: 40px; font-size: 1.1em;">All crystals count — nothing to drop.</div>';
 
     container.innerHTML = `
         <div style="padding: 30px;">
             <h2 style="color: #e94560; margin-bottom: 6px; font-size: 1.6em;">💰 Selling Strategy</h2>
-            <p style="color: #999; margin-bottom: 24px;">Based on the ${limitLabel}. Only characters with overflow crystals are shown.</p>
+            <p style="color: #999; margin-bottom: 20px;">Based on the ${limitLabel}. Drop these crystals — they don't count toward your total.</p>
             ${bodyContent}
         </div>`;
 }
