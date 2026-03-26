@@ -559,7 +559,7 @@ function renderBosses(filter = '') {
                     ${isSelected && difficulties.length > 1 ? `
                         <select onchange="event.stopPropagation(); updateBossDifficulty('${boss.baseName}', this.value)"
                                 onclick="event.stopPropagation()"
-                                style="padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.9); color: #333; cursor: pointer; font-weight: 600; font-size: 0.85em;">
+                                style="padding: 4px 8px; border-radius: 0; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.9); color: #333; cursor: pointer; font-weight: 600; font-size: 0.85em;">
                             ${difficulties.map(diff => `
                                 <option value="${diff}" ${difficulty === diff ? 'selected' : ''} style="background: white; color: #333;">${diff}</option>
                             `).join('')}
@@ -568,7 +568,7 @@ function renderBosses(filter = '') {
                     ${isSelected ? `
                         <select onchange="event.stopPropagation(); updateBossPartyCount('${boss.baseName}', this.value)"
                                 onclick="event.stopPropagation()"
-                                style="padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.9); color: #333; cursor: pointer; font-weight: 600; font-size: 0.85em;">
+                                style="padding: 4px 8px; border-radius: 0; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.9); color: #333; cursor: pointer; font-weight: 600; font-size: 0.85em;">
                             <option value="1" ${partyCount === 1 ? 'selected' : ''} style="background: white; color: #333;">1</option>
                             <option value="2" ${partyCount === 2 ? 'selected' : ''} style="background: white; color: #333;">2</option>
                             <option value="3" ${partyCount === 3 ? 'selected' : ''} style="background: white; color: #333;">3</option>
@@ -643,7 +643,7 @@ function updateBossItemState(bossBaseName) {
                 ${isSelected && difficulties.length > 1 ? `
                     <select onchange="event.stopPropagation(); updateBossDifficulty('${boss.baseName}', this.value)"
                             onclick="event.stopPropagation()"
-                            style="padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.9); color: #333; cursor: pointer; font-weight: 600; font-size: 0.85em;">
+                            style="padding: 4px 8px; border-radius: 0; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.9); color: #333; cursor: pointer; font-weight: 600; font-size: 0.85em;">
                         ${difficulties.map(diff => `
                             <option value="${diff}" ${difficulty === diff ? 'selected' : ''} style="background: white; color: #333;">${diff}</option>
                         `).join('')}
@@ -652,7 +652,7 @@ function updateBossItemState(bossBaseName) {
                 ${isSelected ? `
                     <select onchange="event.stopPropagation(); updateBossPartyCount('${boss.baseName}', this.value)"
                             onclick="event.stopPropagation()"
-                            style="padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.9); color: #333; cursor: pointer; font-weight: 600; font-size: 0.85em;">
+                            style="padding: 4px 8px; border-radius: 0; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.9); color: #333; cursor: pointer; font-weight: 600; font-size: 0.85em;">
                         <option value="1" ${partyCount === 1 ? 'selected' : ''} style="background: white; color: #333;">1</option>
                         <option value="2" ${partyCount === 2 ? 'selected' : ''} style="background: white; color: #333;">2</option>
                         <option value="3" ${partyCount === 3 ? 'selected' : ''} style="background: white; color: #333;">3</option>
@@ -848,7 +848,7 @@ function renderMainContent() {
                ${totalBossCount > 180 ? `
                <div class="boss-limit-warning">
                    <strong>⚠️ Global Limit:</strong> You have selected ${totalBossCount} bosses across all characters. Only the top 180 highest-value bosses are counted in the grand total.
-                   <a href="#" onclick="event.preventDefault(); document.querySelector('[onclick*=sellingStrategy]').click();" style="display: block; margin-top: 8px; color: #667eea; text-decoration: underline; cursor: pointer; font-weight: 600;">Tell me more</a>
+                   <a href="#" onclick="event.preventDefault(); document.querySelector('[onclick*=sellingStrategy]').click();" style="display: block; margin-top: 8px; color: #0f62fe; text-decoration: underline; cursor: pointer; font-weight: 600;">Tell me more</a>
                </div>
                ` : ''}
                 
@@ -1022,10 +1022,10 @@ function showSparesWarning(gearName, sparesCount) {
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        background: linear-gradient(135deg, #e94560 0%, #c62d47 100%);
+        background: linear-gradient(135deg, #da1e28 0%, #c62d47 100%);
         color: white;
         padding: 20px 30px;
-        border-radius: 12px;
+        border-radius: 0;
         box-shadow: 0 10px 40px rgba(233, 69, 96, 0.5);
         z-index: 10000;
         font-size: 1.1em;
@@ -1358,21 +1358,21 @@ function renderPitchContent() {
                     <p style="color: #999; font-size: 1.1em;">Track which pitched gear items ${sanitizeInput(character.name)} has obtained</p>
                 </div>
                 
-                <div style="background: #0f3460; padding: 25px; border-radius: 12px; margin-bottom: 30px;">
-                    <div style="font-size: 1.4em; color: #667eea; font-weight: 600; text-align: center; margin-bottom: 15px;">
+                <div style="background: #393939; padding: 25px; border-radius: 0; margin-bottom: 30px;">
+                    <div style="font-size: 1.4em; color: #0f62fe; font-weight: 600; text-align: center; margin-bottom: 15px;">
                         Progress: ${completedCount}/${totalCount} items
                     </div>
-                    <div style="background: #1a1a2e; height: 24px; border-radius: 12px; overflow: hidden;">
-                        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100%; width: ${(completedCount / totalCount * 100)}%; transition: width 0.3s ease;"></div>
+                    <div style="background: #161616; height: 24px; border-radius: 0; overflow: hidden;">
+                        <div style="background: #0f62fe; height: 100%; width: ${(completedCount / totalCount * 100)}%; transition: width 0.3s ease;"></div>
                     </div>
                     <div style="margin-top: 20px; display: flex; align-items: center; justify-content: center; gap: 12px;">
                         <button onclick="addGlobalBlackHeart()"
-                                style="padding: 10px 20px; border-radius: 8px; border: none; background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%); color: white; cursor: pointer; font-weight: 600; font-size: 1em; box-shadow: 0 4px 15px rgba(243, 156, 18, 0.3); transition: all 0.3s ease;"
+                                style="padding: 10px 20px; border-radius: 0; border: none; background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%); color: white; cursor: pointer; font-weight: 600; font-size: 1em; box-shadow: 0 4px 15px rgba(243, 156, 18, 0.3); transition: all 0.3s ease;"
                                 onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(243, 156, 18, 0.4)';"
                                 onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(243, 156, 18, 0.3)';">
                             ➕ Add BH
                         </button>
-                        <div style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: rgba(243, 156, 18, 0.1); border-radius: 8px; border: 2px solid #f39c12;">
+                        <div style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: rgba(243, 156, 18, 0.1); border-radius: 0; border: 2px solid #f39c12;">
                             <span style="font-size: 0.9em; color: #f39c12; font-weight: 600;">Global BH:</span>
                             <span style="font-size: 1.2em; color: #f39c12; font-weight: 700;">${globalBlackHeartSpares}</span>
                         </div>
@@ -1401,7 +1401,7 @@ function renderPitchContent() {
                                  style="cursor: pointer; display: flex; flex-direction: column; padding: 18px 20px; min-height: 60px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
                                     <div style="display: flex; align-items: center; gap: 15px;">
-                                        <div style="width: 28px; height: 28px; min-width: 28px; border: 2px solid ${isChecked ? '#667eea' : '#666'}; border-radius: 6px; display: flex; align-items: center; justify-content: center; background: ${isChecked ? '#667eea' : 'transparent'}; transition: all 0.3s ease;">
+                                        <div style="width: 28px; height: 28px; min-width: 28px; border: 2px solid ${isChecked ? '#0f62fe' : '#666'}; border-radius: 0; display: flex; align-items: center; justify-content: center; background: ${isChecked ? '#0f62fe' : 'transparent'}; transition: all 0.3s ease;">
                                             ${isChecked ? '<span style="color: white; font-weight: bold; font-size: 1.2em;">✓</span>' : ''}
                                         </div>
                                         <span class="boss-name" style="font-size: 1.05em;">${gearName}</span>
@@ -1412,13 +1412,13 @@ function renderPitchContent() {
                                             <input type="text"
                                                    value="${sparesCount}"
                                                    readonly
-                                                   style="width: 45px; padding: 4px 8px; border-radius: 4px; border: 1px solid #666; background: #1a1a2e; color: #e0e0e0; text-align: center; font-weight: 600;">
+                                                   style="width: 45px; padding: 4px 8px; border-radius: 0; border: 1px solid #666; background: #161616; color: #c6c6c6; text-align: center; font-weight: 600;">
                                             <button onclick="addPitchedGearSpare(\`${gearName}\`)"
-                                                    style="padding: 4px 10px; border-radius: 4px; border: none; background: #27ae60; color: white; cursor: pointer; font-weight: 600; font-size: 0.85em;">
+                                                    style="padding: 4px 10px; border-radius: 0; border: none; background: #1a7a38; color: white; cursor: pointer; font-weight: 600; font-size: 0.85em;">
                                                 Add
                                             </button>
                                             <button onclick="boomPitchedGearSpare(\`${gearName}\`)"
-                                                    style="padding: 4px 10px; border-radius: 4px; border: none; background: #e94560; color: white; cursor: pointer; font-weight: 600; font-size: 0.85em;">
+                                                    style="padding: 4px 10px; border-radius: 0; border: none; background: #da1e28; color: white; cursor: pointer; font-weight: 600; font-size: 0.85em;">
                                                 Boom
                                             </button>
                                         </div>
@@ -1430,13 +1430,13 @@ function renderPitchContent() {
                                             const subChecked = character.pitchedGearSubOptions[gearName]?.has(subOpt);
                                             return `
                                                 <div onclick="togglePitchedGearSubOption(\`${gearName}\`, \`${subOpt}\`)"
-                                                     style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px 12px; background: rgba(255,255,255,0.05); border-radius: 6px; transition: all 0.3s ease;"
+                                                     style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px 12px; background: rgba(255,255,255,0.05); border-radius: 0; transition: all 0.3s ease;"
                                                      onmouseover="this.style.background='rgba(255,255,255,0.1)'"
                                                      onmouseout="this.style.background='rgba(255,255,255,0.05)'">
-                                                    <div style="width: 20px; height: 20px; border: 2px solid ${subChecked ? '#667eea' : '#666'}; border-radius: 4px; display: flex; align-items: center; justify-content: center; background: ${subChecked ? '#667eea' : 'transparent'}; transition: all 0.3s ease;">
+                                                    <div style="width: 20px; height: 20px; border: 2px solid ${subChecked ? '#0f62fe' : '#666'}; border-radius: 0; display: flex; align-items: center; justify-content: center; background: ${subChecked ? '#0f62fe' : 'transparent'}; transition: all 0.3s ease;">
                                                         ${subChecked ? '<span style="color: white; font-weight: bold; font-size: 0.9em;">✓</span>' : ''}
                                                     </div>
-                                                    <span style="font-size: 0.9em; color: #e0e0e0;">${subOpt}</span>
+                                                    <span style="font-size: 0.9em; color: #c6c6c6;">${subOpt}</span>
                                                 </div>
                                             `;
                                         }).join('')}
@@ -1452,7 +1452,7 @@ function renderPitchContent() {
                                  onclick="togglePitchedGear(\`${gearName}\`)"
                                  style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; min-height: 60px;">
                                 <div style="display: flex; align-items: center; gap: 15px;">
-                                    <div style="width: 28px; height: 28px; min-width: 28px; border: 2px solid ${isChecked ? '#667eea' : '#666'}; border-radius: 6px; display: flex; align-items: center; justify-content: center; background: ${isChecked ? '#667eea' : 'transparent'}; transition: all 0.3s ease;">
+                                    <div style="width: 28px; height: 28px; min-width: 28px; border: 2px solid ${isChecked ? '#0f62fe' : '#666'}; border-radius: 0; display: flex; align-items: center; justify-content: center; background: ${isChecked ? '#0f62fe' : 'transparent'}; transition: all 0.3s ease;">
                                         ${isChecked ? '<span style="color: white; font-weight: bold; font-size: 1.2em;">✓</span>' : ''}
                                     </div>
                                     <span class="boss-name" style="font-size: 1.05em;">${gearName}</span>
@@ -1463,13 +1463,13 @@ function renderPitchContent() {
                                         <input type="text"
                                                value="${sparesCount}"
                                                readonly
-                                               style="width: 45px; padding: 4px 8px; border-radius: 4px; border: 1px solid #666; background: #1a1a2e; color: #e0e0e0; text-align: center; font-weight: 600;">
+                                               style="width: 45px; padding: 4px 8px; border-radius: 0; border: 1px solid #666; background: #161616; color: #c6c6c6; text-align: center; font-weight: 600;">
                                         <button onclick="addPitchedGearSpare(\`${gearName}\`)"
-                                                style="padding: 4px 10px; border-radius: 4px; border: none; background: #27ae60; color: white; cursor: pointer; font-weight: 600; font-size: 0.85em;">
+                                                style="padding: 4px 10px; border-radius: 0; border: none; background: #1a7a38; color: white; cursor: pointer; font-weight: 600; font-size: 0.85em;">
                                             Add
                                         </button>
                                         <button onclick="boomPitchedGearSpare(\`${gearName}\`)"
-                                                style="padding: 4px 10px; border-radius: 4px; border: none; background: #e94560; color: white; cursor: pointer; font-weight: 600; font-size: 0.85em;">
+                                                style="padding: 4px 10px; border-radius: 0; border: none; background: #da1e28; color: white; cursor: pointer; font-weight: 600; font-size: 0.85em;">
                                             Boom
                                         </button>
                                     </div>
@@ -1482,8 +1482,8 @@ function renderPitchContent() {
             </div>
 
             <div style="width: 350px; flex-shrink: 0;">
-                <div style="background: #0f3460; border-radius: 12px; padding: 20px; position: sticky; top: 20px;">
-                    <h3 style="font-size: 1.3em; margin-bottom: 15px; color: #667eea; display: flex; align-items: center; gap: 10px;">
+                <div style="background: #393939; border-radius: 0; padding: 20px; position: sticky; top: 20px;">
+                    <h3 style="font-size: 1.3em; margin-bottom: 15px; color: #0f62fe; display: flex; align-items: center; gap: 10px;">
                         📜 Pitch History
                     </h3>
                     <div style="max-height: 600px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
@@ -1495,10 +1495,10 @@ function renderPitchContent() {
                             // Determine color and icon based on action type
                             let actionColor, actionIcon;
                             if (event.action === 'Add') {
-                                actionColor = '#27ae60';
+                                actionColor = '#1a7a38';
                                 actionIcon = '➕';
                             } else if (event.action === 'Boom') {
-                                actionColor = '#e94560';
+                                actionColor = '#da1e28';
                                 actionIcon = '💥';
                             } else if (event.action === 'Acquired') {
                                 actionColor = '#3498db';
@@ -1512,12 +1512,12 @@ function renderPitchContent() {
                             }
                             
                             return `
-                                <div style="background: rgba(255,255,255,0.05); padding: 10px 12px; border-radius: 6px; border-left: 3px solid ${actionColor}; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                                <div style="background: rgba(255,255,255,0.05); padding: 10px 12px; border-radius: 0; border-left: 3px solid ${actionColor}; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
                                     <div style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;">
                                         <span style="font-weight: 600; color: ${actionColor}; font-size: 0.85em;">
                                             ${actionIcon} ${event.action}
                                         </span>
-                                        <span style="color: #e0e0e0; font-size: 0.9em;">
+                                        <span style="color: #c6c6c6; font-size: 0.9em;">
                                             ${event.gearName}
                                         </span>
                                         <span style="color: #999; font-size: 0.8em;">
@@ -1529,7 +1529,7 @@ function renderPitchContent() {
                                             ${timeStr}<br>${dateStr}
                                         </div>
                                         <button onclick="removePitchHistoryEvent(${index})"
-                                                style="padding: 4px 8px; border-radius: 4px; border: none; background: rgba(233, 69, 96, 0.2); color: #e94560; cursor: pointer; font-size: 0.85em; font-weight: 600; transition: all 0.2s ease;"
+                                                style="padding: 4px 8px; border-radius: 0; border: none; background: rgba(233, 69, 96, 0.2); color: #da1e28; cursor: pointer; font-size: 0.85em; font-weight: 600; transition: all 0.2s ease;"
                                                 onmouseover="this.style.background='rgba(233, 69, 96, 0.4)'"
                                                 onmouseout="this.style.background='rgba(233, 69, 96, 0.2)'">
                                             ✕
@@ -1574,14 +1574,14 @@ function renderBHHistory() {
                 <p style="color: #999; font-size: 1.1em;">Global Black Heart tracking across all characters</p>
             </div>
             
-            <div style="background: #0f3460; padding: 25px; border-radius: 12px; margin-bottom: 30px;">
+            <div style="background: #393939; padding: 25px; border-radius: 0; margin-bottom: 30px;">
                 <div style="display: flex; align-items: center; justify-content: center; gap: 15px;">
                     <span style="font-size: 1.2em; color: #f39c12; font-weight: 600;">Current Global Total:</span>
                     <span style="font-size: 2em; color: #f39c12; font-weight: 700;">${globalBlackHeartSpares}</span>
                 </div>
                 <div style="text-align: center; margin-top: 15px;">
                     <button onclick="addGlobalBlackHeart()"
-                            style="padding: 10px 20px; border-radius: 8px; border: none; background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%); color: white; cursor: pointer; font-weight: 600; font-size: 1em; box-shadow: 0 4px 15px rgba(243, 156, 18, 0.3); transition: all 0.3s ease;"
+                            style="padding: 10px 20px; border-radius: 0; border: none; background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%); color: white; cursor: pointer; font-weight: 600; font-size: 1em; box-shadow: 0 4px 15px rgba(243, 156, 18, 0.3); transition: all 0.3s ease;"
                             onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(243, 156, 18, 0.4)';"
                             onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(243, 156, 18, 0.3)';">
                         ➕ Add BH
@@ -1589,7 +1589,7 @@ function renderBHHistory() {
                 </div>
             </div>
             
-            <div style="background: #0f3460; padding: 25px; border-radius: 12px;">
+            <div style="background: #393939; padding: 25px; border-radius: 0;">
                 <h3 style="color: #f39c12; margin-bottom: 20px; font-size: 1.3em; text-align: center;">
                     📜 Complete History (${allBHEvents.length} events)
                 </h3>
@@ -1598,11 +1598,11 @@ function renderBHHistory() {
                         const date = new Date(event.timestamp);
                         const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
                         const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                        const actionColor = event.action === 'Add' ? '#27ae60' : '#e94560';
+                        const actionColor = event.action === 'Add' ? '#1a7a38' : '#da1e28';
                         const actionIcon = event.action === 'Add' ? '➕' : '💥';
                         
                         return `
-                            <div style="background: rgba(243, 156, 18, 0.1); padding: 12px 15px; border-radius: 8px; border-left: 4px solid ${actionColor}; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+                            <div style="background: rgba(243, 156, 18, 0.1); padding: 12px 15px; border-radius: 0; border-left: 4px solid ${actionColor}; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
                                 <div style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px;">
                                     <span style="font-weight: 700; color: ${actionColor}; font-size: 1em;">
                                         ${actionIcon} ${event.action}
@@ -1613,7 +1613,7 @@ function renderBHHistory() {
                                     <span style="color: #999; font-size: 0.85em;">
                                         ⏱ ${event.count}
                                     </span>
-                                    <span style="color: #667eea; font-size: 0.85em; font-style: italic;">
+                                    <span style="color: #0f62fe; font-size: 0.85em; font-style: italic;">
                                         by ${event.characterName}
                                     </span>
                                 </div>
@@ -1670,30 +1670,30 @@ function renderSellingStrategy() {
 
     const rows = groups.map(group => {
         const charTags = group.chars.map(c =>
-            `<span style="background: #1a1a2e; color: #e0e0e0; border-radius: 4px; padding: 3px 8px; font-size: 0.85em;">
+            `<span style="background: #161616; color: #c6c6c6; border-radius: 0; padding: 3px 8px; font-size: 0.85em;">
                 ${sanitizeInput(c.name)}${c.partyCount > 1 ? ` <span style="color:#999;">×${c.partyCount}</span>` : ''}
             </span>`
         ).join('');
 
         return `
             <div style="display: flex; justify-content: space-between; align-items: center;
-                        background: #0f3460; border-left: 3px solid #e94560;
-                        border-radius: 8px; padding: 10px 16px; margin-bottom: 8px; gap: 12px;">
+                        background: #393939; border-left: 3px solid #da1e28;
+                        border-radius: 0; padding: 10px 16px; margin-bottom: 8px; gap: 12px;">
                 <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1;">
-                    <span style="color: #e0e0e0; font-weight: 700; white-space: nowrap;">${sanitizeInput(group.label)}</span>
+                    <span style="color: #c6c6c6; font-weight: 700; white-space: nowrap;">${sanitizeInput(group.label)}</span>
                     <div style="display: flex; gap: 6px; flex-wrap: wrap;">${charTags}</div>
                 </div>
-                <span style="color: #e94560; font-weight: bold; white-space: nowrap;">${formatValue(group.adjustedValue)}</span>
+                <span style="color: #da1e28; font-weight: bold; white-space: nowrap;">${formatValue(group.adjustedValue)}</span>
             </div>`;
     }).join('');
 
     const bodyContent = rows.length > 0
         ? rows
-        : '<div style="color: #2ecc71; text-align: center; padding: 40px; font-size: 1.1em;">All crystals count — nothing to drop.</div>';
+        : '<div style="color: #24a148; text-align: center; padding: 40px; font-size: 1.1em;">All crystals count — nothing to drop.</div>';
 
     container.innerHTML = `
         <div style="padding: 30px;">
-            <h2 style="color: #e94560; margin-bottom: 6px; font-size: 1.6em;">💰 Selling Strategy</h2>
+            <h2 style="color: #da1e28; margin-bottom: 6px; font-size: 1.6em;">💰 Selling Strategy</h2>
             <p style="color: #999; margin-bottom: 20px;">Based on the ${limitLabel}. Drop these crystals — they don't count toward your total.</p>
             ${bodyContent}
         </div>`;
@@ -1747,3 +1747,5 @@ function initialize() {
 
 // Start the app
 initialize();
+
+
