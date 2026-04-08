@@ -22,6 +22,7 @@
             <button class="main-tab" onclick="switchMainTab('pitchTracker')">💀 Pitched Tracker</button>
             <button class="main-tab" onclick="switchMainTab('bhHistory')">🖤 BH History</button>
             <button class="main-tab" onclick="switchMainTab('sellingStrategy')">💰 Selling Strategy</button>
+            <button class="main-tab" onclick="switchMainTab('gearTracker')">🛡️ Gear Tracker</button>
         </div>
         
         <div class="main-content">
@@ -74,6 +75,22 @@
             <!-- Selling Strategy Tab -->
             <div id="sellingStrategyTab" class="tab-content">
                 <div id="sellingStrategyContent"></div>
+            </div>
+
+            <!-- Gear Tracker Tab -->
+            <div id="gearTrackerTab" class="tab-content">
+                <div class="character-section">
+                    <div class="character-controls">
+                        <button class="add-character-btn" onclick="addCharacter()">+ Add Character</button>
+                        <button class="copy-character-btn" onclick="copyCurrentCharacter()">📋 Copy Character</button>
+                        <button class="save-btn" onclick="manualSave()">💾 Save</button>
+                        <span class="save-status" id="saveStatus">✓ Saved!</span>
+                    </div>
+
+                    <div class="character-tabs" id="gearTrackerCharacterTabs"></div>
+                </div>
+
+                <div id="gearTrackerContent"></div>
             </div>
         </div>
     </div>

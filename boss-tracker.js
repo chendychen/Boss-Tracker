@@ -32,17 +32,17 @@ const GAME_DATA = {
         { "name": "Hard Lotus", "price": "414.68M", "value": 444.68 }
     ],
     "pitchedGear": [
-        "Berserked",
-        "Magic Eyepatch",
         {
             "name": "Black Heart / Total Control",
             "subOptions": ["Using TC", "Using BH"]
         },
-        "Dreamy Belt",
-        "Source of Suffering",
-        "Genesis Badge",
-        "Commanding Force Earring",
         "Endless Terror",
+        "Magic Eyepatch",
+        "Source of Suffering",
+        "Berserked",
+        "Commanding Force Earring",
+        "Dreamy Belt",
+        "Genesis Badge",
         "Cursed Spellbook",
         "Mitra's Rage"
     ],
@@ -53,6 +53,47 @@ const GAME_DATA = {
 let bossDataFlat = GAME_DATA.bosses;
 let pitchedGearData = GAME_DATA.pitchedGear;
 let noSparesItems = GAME_DATA.noSparesItems;
+
+const GEAR_SLOTS = [
+    { name: 'Ring 1', col: 1, row: 1, options: ['Slime', 'Kanna', 'Meister', 'Gollux', 'Endless Terror', 'RoR', 'Cont.'] },
+    { name: 'Ring 2', col: 1, row: 2, options: ['Slime', 'Kanna', 'Meister', 'Gollux', 'Endless Terror', 'RoR', 'Cont.'] },
+    { name: 'Ring 3', col: 1, row: 3, options: ['Slime', 'Kanna', 'Meister', 'Gollux', 'Endless Terror', 'RoR', 'Cont.'] },
+    { name: 'Ring 4', col: 1, row: 4, options: ['Slime', 'Kanna', 'Meister', 'Gollux', 'Endless Terror', 'RoR', 'Cont.'] },
+    { name: 'Belt',   col: 1, row: 5, options: ['Gollux', 'Dreamy Belt'] },
+    { name: 'Face',      col: 2, row: 1, options: ['Twilight', 'Berserked'] },
+    { name: 'Eyes',      col: 2, row: 2, options: ['BBM', 'Magic Eyepatch'] },
+    { name: 'Earrings',  col: 2, row: 3, options: ['Gollux', 'Commanding Force Earrings'] },
+    { name: 'Pendant 1', col: 2, row: 4, options: ['Gollux', 'Daybreak', 'Dominator', 'Source of Suffering'] },
+    { name: 'Pendant 2', col: 2, row: 5, options: ['Gollux', 'Daybreak', 'Dominator', 'Source of Suffering'] },
+    { name: 'Hat',      col: 3, row: 1, options: ['CRA', 'Eternal'] },
+    { name: 'Top',      col: 3, row: 2, options: ['CRA', 'Eternal'] },
+    { name: 'Bottom',   col: 3, row: 3, options: ['CRA', 'Eternal'] },
+    { name: 'Shoulder', col: 3, row: 4, options: ['Arcane', 'Eternal'] },
+    { name: 'Cape',   col: 4, row: 1, options: ['Arcane', 'Eternal'] },
+    { name: 'Gloves', col: 4, row: 2, options: ['Arcane', 'Eternal'] },
+    { name: 'Shoes',  col: 4, row: 3, options: ['Arcane', 'Eternal'] },
+];
+
+// FD gain table for Eternal upgrades: ETERNAL_FD_TABLE[sf][nthEternal (0-indexed)]
+const ETERNAL_FD_TABLE = {
+    '17': [-2.72, 1.36, 1.08, -2.38, -3.46, -1.14, 0.21],
+    '18': [-2.14, 1.94, 1.67, -1.77, -2.91, -0.58, 0.76],
+    '19': [-1.53, 2.55, 2.27, -1.19, -2.30,  0.03, 1.37],
+    '20': [-0.89, 3.18, 2.91, -0.56, -1.66,  0.66, 2.01],
+    '21': [-0.23, 3.84, 3.57,  0.11, -1.00,  1.32, 2.67],
+    '22': [ 0.49, 4.56, 4.29,  0.82, -0.28,  2.05, 3.39]
+};
+
+// Optimal Eternal upgrade priority order
+const ETERNAL_PRIORITY = [
+    { slot: 'Hat',      replaces: 'CRA',    boss: 'Kalos' },
+    { slot: 'Top',      replaces: 'CRA',    boss: 'Kalos & Kaling' },
+    { slot: 'Bottom',   replaces: 'CRA',    boss: 'Kalos & Kaling' },
+    { slot: 'Shoulder', replaces: 'Arcane',  boss: 'Kaling' },
+    { slot: 'Cape',     replaces: 'Arcane',  boss: 'Limbo & Baldrix' },
+    { slot: 'Gloves',   replaces: 'Arcane',  boss: 'Limbo & Baldrix' },
+    { slot: 'Shoes',    replaces: 'Arcane',  boss: 'Limbo & Baldrix' },
+];
 
 /**
  * Sanitizes user input to prevent XSS attacks
@@ -163,6 +204,9 @@ function switchMainTab(tabName) {
         renderBHHistory();
     } else if (tabName === 'sellingStrategy') {
         renderSellingStrategy();
+    } else if (tabName === 'gearTracker') {
+        renderGearTrackerCharacterTabs();
+        renderGearTrackerContent();
     }
 }
 
@@ -187,7 +231,11 @@ function saveToLocalStorage() {
                 pitchedGear: Array.from(char.pitchedGear || new Set()),
                 pitchedGearSubOptions: subOptionsObj,
                 pitchedGearSpares: char.pitchedGearSpares || {},
-                pitchHistory: char.pitchHistory || []
+                pitchedGearStarForce: char.pitchedGearStarForce || {},
+                pitchHistory: char.pitchHistory || [],
+                gearStarForce: char.gearStarForce || {},
+                gearType: char.gearType || {},
+                gearLevel: char.gearLevel || {}
             };
         }),
         activeCharacterId: activeCharacterId,
@@ -221,7 +269,11 @@ function loadFromLocalStorage() {
                     pitchedGear: new Set(char.pitchedGear || []),
                     pitchedGearSubOptions: subOptionsObj,
                     pitchedGearSpares: char.pitchedGearSpares || {},
-                    pitchHistory: char.pitchHistory || []
+                    pitchedGearStarForce: char.pitchedGearStarForce || {},
+                    pitchHistory: char.pitchHistory || [],
+                    gearStarForce: char.gearStarForce || {},
+                    gearType: char.gearType || {},
+                    gearLevel: char.gearLevel || {}
                 };
             });
             activeCharacterId = data.activeCharacterId;
@@ -366,7 +418,11 @@ function addCharacter() {
         pitchedGear: new Set(), // Store pitched gear items
         pitchedGearSubOptions: {}, // Store sub-options for items with multiple choices
         pitchedGearSpares: {}, // Store spares count for gear items
-        pitchHistory: [] // Store pitch history events
+        pitchedGearStarForce: {}, // Store star force level per gear item
+        pitchHistory: [], // Store pitch history events
+        gearStarForce: {}, // Store star force level per gear slot
+        gearType: {}, // Store gear type per gear slot
+        gearLevel: {} // Store level for RoR/Cont rings
     };
     characters.push(newCharacter);
     activeCharacterId = newCharacter.id;
@@ -391,6 +447,10 @@ function copyCurrentCharacter() {
         pitchedGear: new Set(currentChar.pitchedGear), // Copy pitched gear
         pitchedGearSubOptions: { ...currentChar.pitchedGearSubOptions }, // Copy sub-options
         pitchedGearSpares: { ...currentChar.pitchedGearSpares }, // Copy spares
+        pitchedGearStarForce: { ...currentChar.pitchedGearStarForce }, // Copy star force levels
+        gearStarForce: { ...currentChar.gearStarForce }, // Copy gear star force levels
+        gearType: { ...currentChar.gearType }, // Copy gear types
+        gearLevel: { ...currentChar.gearLevel }, // Copy gear levels
         pitchHistory: [...(currentChar.pitchHistory || [])] // Copy history
     };
     
@@ -483,15 +543,18 @@ function switchCharacter(id) {
     activeCharacterId = id;
     saveToLocalStorage();
     
-    // Update both tab sets
+    // Update all tab sets
     renderCharacterTabs();
     renderPitchCharacterTabs();
-    
+    renderGearTrackerCharacterTabs();
+
     // Update content based on active main tab
     if (activeMainTab === 'bossCrystals') {
         renderMainContent();
     } else if (activeMainTab === 'pitchTracker') {
         renderPitchContent();
+    } else if (activeMainTab === 'gearTracker') {
+        renderGearTrackerContent();
     }
 }
 
@@ -923,10 +986,13 @@ function clearCharacterBosses() {
 function renderAll() {
     renderCharacterTabs();
     renderPitchCharacterTabs();
+    renderGearTrackerCharacterTabs();
     if (activeMainTab === 'bossCrystals') {
         renderMainContent();
     } else if (activeMainTab === 'pitchTracker') {
         renderPitchContent();
+    } else if (activeMainTab === 'gearTracker') {
+        renderGearTrackerContent();
     }
 }
 
@@ -1108,6 +1174,24 @@ function togglePitchedGearSubOption(gearName, subOption) {
         } else {
             character.pitchedGearSubOptions[gearName].add(subOption);
         }
+    }
+
+    saveToLocalStorage();
+    renderPitchContent();
+}
+
+function setPitchedGearStarForce(gearName, level) {
+    const character = getActiveCharacter();
+    if (!character) return;
+
+    if (!character.pitchedGearStarForce) {
+        character.pitchedGearStarForce = {};
+    }
+
+    if (level === 'Unused') {
+        delete character.pitchedGearStarForce[gearName];
+    } else {
+        character.pitchedGearStarForce[gearName] = level;
     }
 
     saveToLocalStorage();
@@ -1326,6 +1410,127 @@ function removePitchHistoryEvent(eventIndex) {
     renderPitchContent();
 }
 
+function renderGearCard(gear, character) {
+    const noSparesItems = GAME_DATA.noSparesItems;
+    const noStarForceItems = ['Genesis Badge', 'Cursed Spellbook', "Mitra's Rage"];
+    const gearName = typeof gear === 'string' ? gear : gear.name;
+    const hasSubOptions = typeof gear === 'object' && gear.subOptions;
+    const isChecked = character.pitchedGear.has(gearName);
+    const hasSpares = !noSparesItems.includes(gearName);
+    const isUsingBH = gearName === "Black Heart / Total Control" &&
+                     character.pitchedGearSubOptions?.[gearName]?.has("Using BH");
+    const sparesCount = isUsingBH ? globalBlackHeartSpares : (character.pitchedGearSpares[gearName] || 0);
+    const starForceLevel = character.pitchedGearStarForce?.[gearName] || 'Unused';
+    const starForceOptions = ['Unused', '18', '19', '20', '21', '22'];
+    const hasStarForce = !noStarForceItems.includes(gearName);
+
+    const starForceDropdown = isChecked && hasStarForce ? `
+        <div onclick="event.stopPropagation();" style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-size: 0.85em; color: #999; font-weight: 600;">SF:</span>
+            <select onchange="setPitchedGearStarForce(\`${gearName}\`, this.value)"
+                    style="padding: 4px 8px; border-radius: 0; border: 1px solid #666; background: #161616; color: #c6c6c6; font-weight: 600; font-size: 0.85em; cursor: pointer;">
+                ${starForceOptions.map(opt => `<option value="${opt}" ${starForceLevel === opt ? 'selected' : ''}>${opt === 'Unused' ? 'Unused' : opt + '★'}</option>`).join('')}
+            </select>
+        </div>
+    ` : '';
+
+    const sparesHtml = hasSpares && isChecked ? `
+        <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-size: 0.85em; color: #999; font-weight: 600;">Spares:</span>
+            <input type="text" value="${sparesCount}" readonly
+                   style="width: 45px; padding: 4px 8px; border-radius: 0; border: 1px solid #666; background: #161616; color: #c6c6c6; text-align: center; font-weight: 600;">
+            <button onclick="addPitchedGearSpare(\`${gearName}\`)"
+                    style="padding: 4px 10px; border-radius: 0; border: none; background: #1a7a38; color: white; cursor: pointer; font-weight: 600; font-size: 0.85em;">
+                Add
+            </button>
+            <button onclick="boomPitchedGearSpare(\`${gearName}\`)"
+                    style="padding: 4px 10px; border-radius: 0; border: none; background: #da1e28; color: white; cursor: pointer; font-weight: 600; font-size: 0.85em;">
+                Boom
+            </button>
+        </div>
+    ` : '';
+
+    let controlsRow = '';
+    if (isChecked && (starForceDropdown || sparesHtml)) {
+        controlsRow = `
+            <div onclick="event.stopPropagation();" style="display: flex; align-items: center; gap: 12px; margin-top: 12px; margin-left: 43px; flex-wrap: wrap;">
+                ${starForceDropdown}
+                ${sparesHtml}
+            </div>
+        `;
+    }
+
+    let subOptionsRow = '';
+    if (hasSubOptions && isChecked) {
+        subOptionsRow = `
+            <div style="margin-top: 12px; margin-left: 43px; display: flex; gap: 15px;" onclick="event.stopPropagation();">
+                ${gear.subOptions.map(subOpt => {
+                    const subChecked = character.pitchedGearSubOptions[gearName]?.has(subOpt);
+                    return `
+                        <div onclick="togglePitchedGearSubOption(\`${gearName}\`, \`${subOpt}\`)"
+                             style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px 12px; background: rgba(255,255,255,0.05); border-radius: 0; transition: all 0.3s ease;"
+                             onmouseover="this.style.background='rgba(255,255,255,0.1)'"
+                             onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+                            <div style="width: 20px; height: 20px; border: 2px solid ${subChecked ? '#0f62fe' : '#666'}; border-radius: 0; display: flex; align-items: center; justify-content: center; background: ${subChecked ? '#0f62fe' : 'transparent'}; transition: all 0.3s ease;">
+                                ${subChecked ? '<span style="color: white; font-weight: bold; font-size: 0.9em;">✓</span>' : ''}
+                            </div>
+                            <span style="font-size: 0.9em; color: #c6c6c6;">${subOpt}</span>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    return `
+        <div class="boss-item ${isChecked ? 'selected' : ''}"
+             data-gear="${gearName}"
+             onclick="togglePitchedGear(\`${gearName}\`)"
+             style="cursor: pointer; display: flex; flex-direction: column; padding: 18px 20px; min-height: 60px;">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div style="width: 28px; height: 28px; min-width: 28px; border: 2px solid ${isChecked ? '#0f62fe' : '#666'}; border-radius: 0; display: flex; align-items: center; justify-content: center; background: ${isChecked ? '#0f62fe' : 'transparent'}; transition: all 0.3s ease;">
+                    ${isChecked ? '<span style="color: white; font-weight: bold; font-size: 1.2em;">✓</span>' : ''}
+                </div>
+                <span class="boss-name" style="font-size: 1.05em;">${gearName}</span>
+            </div>
+            ${controlsRow}
+            ${subOptionsRow}
+        </div>
+    `;
+}
+
+function renderPitchedGearSections(character) {
+    const noStarForceItems = ['Genesis Badge', 'Cursed Spellbook', "Mitra's Rage"];
+    const blackHeartGear = pitchedGearData.filter(g => typeof g === 'object' && g.subOptions);
+    const starForceGear = pitchedGearData.filter(g => {
+        const name = typeof g === 'string' ? g : g.name;
+        return !noStarForceItems.includes(name) && !(typeof g === 'object' && g.subOptions);
+    });
+    const noStarForceGear = pitchedGearData.filter(g => {
+        const name = typeof g === 'string' ? g : g.name;
+        return noStarForceItems.includes(name);
+    });
+
+    return `
+        <div style="margin-bottom: 20px;">
+            <h3 style="font-size: 1.1em; color: #c6c6c6; margin-bottom: 10px;">Heart</h3>
+            ${blackHeartGear.map(g => renderGearCard(g, character)).join('')}
+        </div>
+        <div style="margin-bottom: 20px;">
+            <h3 style="font-size: 1.1em; color: #c6c6c6; margin-bottom: 10px;">Star Forceable Pitched</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 15px;">
+                ${starForceGear.map(g => renderGearCard(g, character)).join('')}
+            </div>
+        </div>
+        <div style="margin-bottom: 20px;">
+            <h3 style="font-size: 1.1em; color: #c6c6c6; margin-bottom: 10px;">One-of Pitched</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 15px;">
+                ${noStarForceGear.map(g => renderGearCard(g, character)).join('')}
+            </div>
+        </div>
+    `;
+}
+
 function renderPitchContent() {
     const character = getActiveCharacter();
     const pitchContent = document.getElementById('pitchContent');
@@ -1379,106 +1584,7 @@ function renderPitchContent() {
                     </div>
                 </div>
 
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 15px;">
-                ${pitchedGearData.map(gear => {
-                    const gearName = typeof gear === 'string' ? gear : gear.name;
-                    const hasSubOptions = typeof gear === 'object' && gear.subOptions;
-                    const isChecked = character.pitchedGear.has(gearName);
-                    
-                    const hasSpares = !noSparesItems.includes(gearName);
-                    
-                    // Check if this is Black Heart with "Using BH" selected (use global counter)
-                    const isUsingBH = gearName === "Black Heart / Total Control" &&
-                                     character.pitchedGearSubOptions?.[gearName]?.has("Using BH");
-                    const sparesCount = isUsingBH ? globalBlackHeartSpares : (character.pitchedGearSpares[gearName] || 0);
-                    
-                    if (hasSubOptions) {
-                        // Item with sub-options
-                        return `
-                            <div class="boss-item ${isChecked ? 'selected' : ''}"
-                                 data-gear="${gearName}"
-                                 onclick="togglePitchedGear(\`${gearName}\`)"
-                                 style="cursor: pointer; display: flex; flex-direction: column; padding: 18px 20px; min-height: 60px;">
-                                <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
-                                    <div style="display: flex; align-items: center; gap: 15px;">
-                                        <div style="width: 28px; height: 28px; min-width: 28px; border: 2px solid ${isChecked ? '#0f62fe' : '#666'}; border-radius: 0; display: flex; align-items: center; justify-content: center; background: ${isChecked ? '#0f62fe' : 'transparent'}; transition: all 0.3s ease;">
-                                            ${isChecked ? '<span style="color: white; font-weight: bold; font-size: 1.2em;">✓</span>' : ''}
-                                        </div>
-                                        <span class="boss-name" style="font-size: 1.05em;">${gearName}</span>
-                                    </div>
-                                    ${hasSpares && isChecked ? `
-                                        <div onclick="event.stopPropagation();" style="display: flex; align-items: center; gap: 6px;">
-                                            <span style="font-size: 0.85em; color: #999; font-weight: 600;">Spares:</span>
-                                            <input type="text"
-                                                   value="${sparesCount}"
-                                                   readonly
-                                                   style="width: 45px; padding: 4px 8px; border-radius: 0; border: 1px solid #666; background: #161616; color: #c6c6c6; text-align: center; font-weight: 600;">
-                                            <button onclick="addPitchedGearSpare(\`${gearName}\`)"
-                                                    style="padding: 4px 10px; border-radius: 0; border: none; background: #1a7a38; color: white; cursor: pointer; font-weight: 600; font-size: 0.85em;">
-                                                Add
-                                            </button>
-                                            <button onclick="boomPitchedGearSpare(\`${gearName}\`)"
-                                                    style="padding: 4px 10px; border-radius: 0; border: none; background: #da1e28; color: white; cursor: pointer; font-weight: 600; font-size: 0.85em;">
-                                                Boom
-                                            </button>
-                                        </div>
-                                    ` : ''}
-                                </div>
-                                ${isChecked ? `
-                                    <div style="margin-top: 12px; margin-left: 43px; display: flex; gap: 15px;" onclick="event.stopPropagation();">
-                                        ${gear.subOptions.map(subOpt => {
-                                            const subChecked = character.pitchedGearSubOptions[gearName]?.has(subOpt);
-                                            return `
-                                                <div onclick="togglePitchedGearSubOption(\`${gearName}\`, \`${subOpt}\`)"
-                                                     style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px 12px; background: rgba(255,255,255,0.05); border-radius: 0; transition: all 0.3s ease;"
-                                                     onmouseover="this.style.background='rgba(255,255,255,0.1)'"
-                                                     onmouseout="this.style.background='rgba(255,255,255,0.05)'">
-                                                    <div style="width: 20px; height: 20px; border: 2px solid ${subChecked ? '#0f62fe' : '#666'}; border-radius: 0; display: flex; align-items: center; justify-content: center; background: ${subChecked ? '#0f62fe' : 'transparent'}; transition: all 0.3s ease;">
-                                                        ${subChecked ? '<span style="color: white; font-weight: bold; font-size: 0.9em;">✓</span>' : ''}
-                                                    </div>
-                                                    <span style="font-size: 0.9em; color: #c6c6c6;">${subOpt}</span>
-                                                </div>
-                                            `;
-                                        }).join('')}
-                                    </div>
-                                ` : ''}
-                            </div>
-                        `;
-                    } else {
-                        // Regular item
-                        return `
-                            <div class="boss-item ${isChecked ? 'selected' : ''}"
-                                 data-gear="${gearName}"
-                                 onclick="togglePitchedGear(\`${gearName}\`)"
-                                 style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; min-height: 60px;">
-                                <div style="display: flex; align-items: center; gap: 15px;">
-                                    <div style="width: 28px; height: 28px; min-width: 28px; border: 2px solid ${isChecked ? '#0f62fe' : '#666'}; border-radius: 0; display: flex; align-items: center; justify-content: center; background: ${isChecked ? '#0f62fe' : 'transparent'}; transition: all 0.3s ease;">
-                                        ${isChecked ? '<span style="color: white; font-weight: bold; font-size: 1.2em;">✓</span>' : ''}
-                                    </div>
-                                    <span class="boss-name" style="font-size: 1.05em;">${gearName}</span>
-                                </div>
-                                ${hasSpares && isChecked ? `
-                                    <div onclick="event.stopPropagation();" style="display: flex; align-items: center; gap: 6px;">
-                                        <span style="font-size: 0.85em; color: #999; font-weight: 600;">Spares:</span>
-                                        <input type="text"
-                                               value="${sparesCount}"
-                                               readonly
-                                               style="width: 45px; padding: 4px 8px; border-radius: 0; border: 1px solid #666; background: #161616; color: #c6c6c6; text-align: center; font-weight: 600;">
-                                        <button onclick="addPitchedGearSpare(\`${gearName}\`)"
-                                                style="padding: 4px 10px; border-radius: 0; border: none; background: #1a7a38; color: white; cursor: pointer; font-weight: 600; font-size: 0.85em;">
-                                            Add
-                                        </button>
-                                        <button onclick="boomPitchedGearSpare(\`${gearName}\`)"
-                                                style="padding: 4px 10px; border-radius: 0; border: none; background: #da1e28; color: white; cursor: pointer; font-weight: 600; font-size: 0.85em;">
-                                            Boom
-                                        </button>
-                                    </div>
-                                ` : ''}
-                            </div>
-                        `;
-                    }
-                }).join('')}
-                </div>
+                ${renderPitchedGearSections(character)}
             </div>
 
             <div style="width: 350px; flex-shrink: 0;">
@@ -1631,6 +1737,479 @@ function renderBHHistory() {
     `;
 }
 
+function setGearStarForce(slot, level) {
+    const character = getActiveCharacter();
+    if (!character) return;
+
+    if (!character.gearStarForce) {
+        character.gearStarForce = {};
+    }
+
+    if (level === 'Unused') {
+        delete character.gearStarForce[slot];
+    } else {
+        character.gearStarForce[slot] = level;
+    }
+
+    saveToLocalStorage();
+    renderGearTrackerContent();
+}
+
+function setGearType(slot, type) {
+    const character = getActiveCharacter();
+    if (!character) return;
+
+    if (!character.gearType) character.gearType = {};
+    if (!character.gearStarForce) character.gearStarForce = {};
+    if (!character.gearLevel) character.gearLevel = {};
+
+    const oldType = character.gearType[slot] || '';
+
+    if (!type) {
+        delete character.gearType[slot];
+        delete character.gearStarForce[slot];
+        delete character.gearLevel[slot];
+    } else {
+        // RoR and Cont. are mutually exclusive across all rings
+        if (type === 'RoR' || type === 'Cont.') {
+            const otherType = type === 'RoR' ? 'Cont.' : 'RoR';
+            const ringSlots = ['Ring 1', 'Ring 2', 'Ring 3', 'Ring 4'];
+            for (const rs of ringSlots) {
+                if (character.gearType[rs] === otherType) {
+                    delete character.gearType[rs];
+                    delete character.gearLevel[rs];
+                }
+            }
+        }
+
+        character.gearType[slot] = type;
+
+        // Clear SF when switching to RoR/Cont (uses level instead)
+        if (type === 'RoR' || type === 'Cont.') {
+            delete character.gearStarForce[slot];
+        }
+        // Clear level when switching away from RoR/Cont
+        if (oldType === 'RoR' || oldType === 'Cont.') {
+            if (type !== 'RoR' && type !== 'Cont.') {
+                delete character.gearLevel[slot];
+            }
+        }
+    }
+
+    saveToLocalStorage();
+    renderGearTrackerContent();
+}
+
+function setGearLevel(slot, level) {
+    const character = getActiveCharacter();
+    if (!character) return;
+
+    if (!character.gearLevel) {
+        character.gearLevel = {};
+    }
+
+    if (!level) {
+        delete character.gearLevel[slot];
+    } else {
+        character.gearLevel[slot] = level;
+    }
+
+    saveToLocalStorage();
+    renderGearTrackerContent();
+}
+
+function applyGearPreset(preset) {
+    const character = getActiveCharacter();
+    if (!character) return;
+
+    if (!character.gearType) character.gearType = {};
+    if (!character.gearStarForce) character.gearStarForce = {};
+
+    const sfSelect = document.getElementById('presetSFSelect');
+    const sf = sfSelect ? sfSelect.value : 'Unused';
+
+    const presets = {
+        'Gollux': [
+            { slot: 'Ring 1', type: 'Gollux' },
+            { slot: 'Earrings', type: 'Gollux' },
+            { slot: 'Pendant 1', type: 'Gollux' },
+            { slot: 'Belt', type: 'Gollux' }
+        ],
+        'Arcane': [
+            { slot: 'Shoulder', type: 'Arcane' },
+            { slot: 'Cape', type: 'Arcane' },
+            { slot: 'Gloves', type: 'Arcane' },
+            { slot: 'Shoes', type: 'Arcane' }
+        ],
+        'CRA': [
+            { slot: 'Hat', type: 'CRA' },
+            { slot: 'Top', type: 'CRA' },
+            { slot: 'Bottom', type: 'CRA' }
+        ]
+    };
+
+    const items = presets[preset];
+    if (!items) return;
+
+    // For Gollux ring: find first ring slot not already taken by a non-Gollux unique type
+    if (preset === 'Gollux') {
+        const ringSlots = ['Ring 1', 'Ring 2', 'Ring 3', 'Ring 4'];
+        // Find a ring slot: prefer one already set to Gollux, otherwise first empty, otherwise Ring 1
+        let targetRing = ringSlots.find(rs => character.gearType[rs] === 'Gollux')
+                      || ringSlots.find(rs => !character.gearType[rs])
+                      || 'Ring 1';
+        items[0].slot = targetRing;
+    }
+
+    for (const item of items) {
+        character.gearType[item.slot] = item.type;
+        if (sf === 'Unused') {
+            delete character.gearStarForce[item.slot];
+        } else {
+            character.gearStarForce[item.slot] = sf;
+        }
+    }
+
+    saveToLocalStorage();
+    renderGearTrackerContent();
+}
+
+function renderGearTrackerCharacterTabs() {
+    const tabsContainer = document.getElementById('gearTrackerCharacterTabs');
+    if (!tabsContainer) return;
+
+    tabsContainer.innerHTML = characters.map(char => {
+        const isActive = char.id === activeCharacterId;
+        const sanitizedName = sanitizeInput(char.name);
+        return `
+            <div class="character-tab ${isActive ? 'active' : ''}"
+                 onclick="switchCharacter(${char.id})">
+                <div>
+                    <div class="character-tab-name">${sanitizedName}</div>
+                </div>
+                ${characters.length > 1 ? `
+                    <button class="delete-character-btn"
+                            onclick="event.stopPropagation(); deleteCharacter(${char.id})"
+                            title="Delete character">✕</button>
+                ` : ''}
+            </div>
+        `;
+    }).join('');
+}
+
+function getEternalsRecommendations(character, strategy) {
+    const eternalSlots = ['Hat', 'Top', 'Bottom', 'Shoulder', 'Cape', 'Gloves', 'Shoes'];
+    const currentEternals = eternalSlots.filter(s => character.gearType?.[s] === 'Eternal');
+    const eternalCount = currentEternals.length;
+
+    // Find remaining slots in priority order
+    const remaining = ETERNAL_PRIORITY.filter(p => !currentEternals.includes(p.slot));
+
+    const priorityOrder = ETERNAL_PRIORITY.map(p => p.slot);
+    // Sort current eternals by priority order to assign correct Nth column
+    const sortedCurrentEternals = [...currentEternals].sort((a, b) => priorityOrder.indexOf(a) - priorityOrder.indexOf(b));
+
+    // Calculate cumulative FD from current eternals using their actual SF
+    let cumulativeFD = 0;
+    for (let i = 0; i < sortedCurrentEternals.length; i++) {
+        const slot = sortedCurrentEternals[i];
+        const sf = character.gearStarForce?.[slot] || '18';
+        const row = ETERNAL_FD_TABLE[sf];
+        if (row && i < 7) {
+            cumulativeFD += row[i];
+        }
+    }
+
+    const allOptions = [];
+
+    // Option type 1: Acquire next Eternal piece (must follow priority order)
+    if (remaining.length > 0 && eternalCount < 7) {
+        const nthEternal = eternalCount; // 0-indexed column
+        let sf;
+        if (strategy === 'Safe') {
+            sf = (nthEternal < 3) ? '18' : '21';
+        } else {
+            sf = '22';
+        }
+
+        const fdGain = ETERNAL_FD_TABLE[sf][nthEternal];
+        const entry = remaining[0];
+
+        allOptions.push({
+            type: 'acquire',
+            slot: entry.slot,
+            replaces: entry.replaces,
+            boss: entry.boss,
+            sf: sf,
+            fdGain: fdGain,
+            nthEternal: nthEternal + 1
+        });
+    }
+
+    // Option type 2: Upgrade SF on existing Eternals
+    // Generate upgrade options for each phase boundary (e.g. 18→19, 19→21)
+    for (let i = 0; i < sortedCurrentEternals.length; i++) {
+        const slot = sortedCurrentEternals[i];
+        const currentSF = character.gearStarForce?.[slot] || '18';
+        const currentSFNum = parseInt(currentSF);
+        if (isNaN(currentSFNum) || currentSFNum >= 22) continue;
+
+        // Determine SF milestones for this slot
+        let milestones;
+        if (strategy === 'Safe') {
+            milestones = i < 3 ? [19, 21] : [21];
+        } else {
+            milestones = [22];
+        }
+
+        for (let m = 0; m < milestones.length; m++) {
+            const milestone = milestones[m];
+            // fromSF is either current SF or the previous milestone
+            const fromSFNum = Math.max(currentSFNum, m > 0 ? milestones[m - 1] : currentSFNum);
+            if (fromSFNum >= milestone) continue;
+
+            const fromSF = String(fromSFNum);
+            const toSF = String(milestone);
+            const fromFD = ETERNAL_FD_TABLE[fromSF]?.[i] || 0;
+            const toFD = ETERNAL_FD_TABLE[toSF]?.[i] || 0;
+            const fdGain = toFD - fromFD;
+
+            allOptions.push({
+                type: 'upgrade',
+                slot: slot,
+                fromSF: fromSF,
+                sf: toSF,
+                fdGain: fdGain,
+                nthEternal: i + 1,
+                phase: m
+            });
+        }
+    }
+
+    // Sort: earlier phases on the same slot must precede later phases,
+    // otherwise sort by FD gain descending
+    allOptions.sort((a, b) => {
+        // If same slot upgrades, earlier phase comes first
+        if (a.type === 'upgrade' && b.type === 'upgrade' && a.slot === b.slot) {
+            return a.phase - b.phase;
+        }
+        return b.fdGain - a.fdGain;
+    });
+    const recommendations = allOptions.slice(0, 3);
+
+    return { recommendations, eternalCount, cumulativeFD };
+}
+
+function renderEternalsStrategy(character) {
+    const safe = getEternalsRecommendations(character, 'Safe');
+    const risky = getEternalsRecommendations(character, 'Risky');
+
+    function renderPanel(title, data, description) {
+        if (data.eternalCount >= 7) {
+            return `
+                <div style="flex: 1; background: #393939; padding: 20px;">
+                    <h3 style="font-size: 1.1em; color: #c6c6c6; margin-bottom: 8px;">${title}</h3>
+                    <p style="font-size: 0.85em; color: #999; margin-bottom: 15px;">${description}</p>
+                    <div style="text-align: center; color: #0f62fe; font-weight: 600; padding: 20px;">All 7 Eternal pieces equipped!</div>
+                </div>
+            `;
+        }
+
+        return `
+            <div style="flex: 1; background: #393939; padding: 20px;">
+                <h3 style="font-size: 1.1em; color: #c6c6c6; margin-bottom: 8px;">${title}</h3>
+                <p style="font-size: 0.85em; color: #999; margin-bottom: 15px;">${description}</p>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    ${data.recommendations.map((rec, i) => {
+                        const fdColor = rec.fdGain >= 0 ? '#1a7a38' : '#da1e28';
+                        const fdSign = rec.fdGain >= 0 ? '+' : '';
+                        const isUpgrade = rec.type === 'upgrade';
+                        const label = isUpgrade
+                            ? `${rec.slot} <span style="color: #666; font-weight: 400;">${rec.fromSF}★ → ${rec.sf}★</span>`
+                            : `${rec.slot} <span style="color: #666; font-weight: 400;">→ Eternal</span>`;
+                        const detail = isUpgrade
+                            ? `Upgrade SF · ${rec.nthEternal}${rec.nthEternal === 1 ? 'st' : rec.nthEternal === 2 ? 'nd' : rec.nthEternal === 3 ? 'rd' : 'th'} Eternal`
+                            : `Replaces ${rec.replaces} · ${rec.boss} · ${rec.sf}★ · ${rec.nthEternal}${rec.nthEternal === 1 ? 'st' : rec.nthEternal === 2 ? 'nd' : rec.nthEternal === 3 ? 'rd' : 'th'} Eternal`;
+                        return `
+                            <div style="background: #262626; padding: 14px; display: flex; align-items: center; justify-content: space-between;">
+                                <div>
+                                    <div style="font-weight: 600; color: #c6c6c6; font-size: 0.95em;">
+                                        ${i + 1}. ${label}
+                                    </div>
+                                    <div style="font-size: 0.8em; color: #999; margin-top: 4px;">
+                                        ${detail}
+                                    </div>
+                                </div>
+                                <div style="font-size: 1.2em; font-weight: 700; color: ${fdColor}; min-width: 70px; text-align: right;">
+                                    ${fdSign}${rec.fdGain.toFixed(2)}%
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    const cumulativeFD = safe.cumulativeFD;
+    const cumColor = cumulativeFD >= 0 ? '#1a7a38' : '#da1e28';
+    const cumSign = cumulativeFD >= 0 ? '+' : '';
+
+    return `
+        <div style="margin-top: 30px;">
+            <h2 style="font-size: 1.4em; margin-bottom: 4px; text-align: center; color: #c6c6c6;">Eternals Strategy <span style="font-size: 0.7em; color: #666;">(${safe.eternalCount}/7 equipped)</span></h2>
+            <div style="text-align: center; margin-bottom: 15px; font-size: 1.1em; font-weight: 600; color: ${cumColor};">
+                Current FD: ${cumSign}${cumulativeFD.toFixed(2)}%
+            </div>
+            <div style="display: flex; gap: 15px;">
+                ${renderPanel('Safe', safe, '18★ for first 3, then 21★ max')}
+                ${renderPanel('Risky', risky, 'All at 22★ for maximum FD')}
+            </div>
+        </div>
+    `;
+}
+
+function renderGearTrackerContent() {
+    const character = getActiveCharacter();
+    const container = document.getElementById('gearTrackerContent');
+    if (!container) return;
+
+    if (!character) {
+        container.innerHTML = '<div class="no-character-message">Click "Add Character" to get started!</div>';
+        return;
+    }
+
+    if (!character.gearStarForce) character.gearStarForce = {};
+    if (!character.gearType) character.gearType = {};
+    if (!character.gearLevel) character.gearLevel = {};
+
+    const starForceOptions = ['Unused', '18', '19', '20', '21', '22'];
+    const levelOptions = ['3', '4', '5', '6'];
+
+    // Collect used types for uniqueness constraints
+    const ringSlots = ['Ring 1', 'Ring 2', 'Ring 3', 'Ring 4'];
+    const pendantSlots = ['Pendant 1', 'Pendant 2'];
+    const usedRingTypes = {};
+    const usedPendantTypes = {};
+    for (const rs of ringSlots) {
+        const t = character.gearType[rs];
+        if (t) usedRingTypes[t] = rs;
+    }
+    for (const ps of pendantSlots) {
+        const t = character.gearType[ps];
+        if (t) usedPendantTypes[t] = ps;
+    }
+
+    // Check if RoR or Cont. is already used (for mutual exclusivity)
+    const hasRoR = Object.values(character.gearType).includes('RoR');
+    const hasCont = Object.values(character.gearType).includes('Cont.');
+
+    container.innerHTML = `
+        <div style="padding: 30px; max-width: 1200px; margin: 0 auto;">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h2 style="font-size: 2em; margin-bottom: 10px;">🛡️ Gear Tracker</h2>
+                <p style="color: #999; font-size: 1.1em;">Track star force levels for ${sanitizeInput(character.name)}'s equipment</p>
+            </div>
+
+            <div style="display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;">
+                <span style="font-size: 0.9em; color: #999; font-weight: 600;">Quick Fill:</span>
+                <select id="presetSFSelect"
+                        style="padding: 6px 10px; border-radius: 0; border: 1px solid #666; background: #161616; color: #c6c6c6; font-weight: 600; font-size: 0.85em; cursor: pointer;">
+                    ${['Unused', '18', '19', '20', '21', '22'].map(opt => `<option value="${opt}">${opt === 'Unused' ? 'Unused' : opt + '★'}</option>`).join('')}
+                </select>
+                <button onclick="applyGearPreset('Gollux')"
+                        style="padding: 6px 16px; border-radius: 0; border: none; background: #0f62fe; color: white; cursor: pointer; font-weight: 600; font-size: 0.85em;">
+                    Full Gollux
+                </button>
+                <button onclick="applyGearPreset('Arcane')"
+                        style="padding: 6px 16px; border-radius: 0; border: none; background: #0f62fe; color: white; cursor: pointer; font-weight: 600; font-size: 0.85em;">
+                    Full Arcane
+                </button>
+                <button onclick="applyGearPreset('CRA')"
+                        style="padding: 6px 16px; border-radius: 0; border: none; background: #0f62fe; color: white; cursor: pointer; font-weight: 600; font-size: 0.85em;">
+                    Full CRA
+                </button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(5, auto); gap: 15px;">
+                ${GEAR_SLOTS.map(slot => {
+                    const sfLevel = character.gearStarForce[slot.name] || 'Unused';
+                    const gearType = character.gearType[slot.name] || '';
+                    const gearLvl = character.gearLevel[slot.name] || '';
+                    const isRoRCont = gearType === 'RoR' || gearType === 'Cont.';
+                    const isRing = ringSlots.includes(slot.name);
+                    const isPendant = pendantSlots.includes(slot.name);
+
+                    // Filter options for uniqueness
+                    let availableOptions = slot.options;
+                    if (isRing) {
+                        availableOptions = slot.options.filter(opt => {
+                            // Allow the currently selected type
+                            if (opt === gearType) return true;
+                            // Block if already used by another ring
+                            if (usedRingTypes[opt]) return false;
+                            // RoR/Cont mutual exclusivity
+                            if (opt === 'RoR' && hasCont) return false;
+                            if (opt === 'Cont.' && hasRoR) return false;
+                            return true;
+                        });
+                    } else if (isPendant) {
+                        availableOptions = slot.options.filter(opt => {
+                            if (opt === gearType) return true;
+                            if (usedPendantTypes[opt]) return false;
+                            return true;
+                        });
+                    }
+
+                    // Second row: Level for RoR/Cont, SF for everything else
+                    let secondRow = '';
+                    if (isRoRCont) {
+                        secondRow = `
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <span style="font-size: 0.85em; color: #999; font-weight: 600; min-width: 35px;">Lv:</span>
+                                <select onchange="setGearLevel('${slot.name}', this.value)"
+                                        style="padding: 4px 8px; border-radius: 0; border: 1px solid #666; background: #161616; color: #c6c6c6; font-weight: 600; font-size: 0.85em; cursor: pointer; flex: 1;">
+                                    <option value="" ${!gearLvl ? 'selected' : ''}>--</option>
+                                    ${levelOptions.map(opt => `<option value="${opt}" ${gearLvl === opt ? 'selected' : ''}>Level ${opt}</option>`).join('')}
+                                </select>
+                            </div>
+                        `;
+                    } else {
+                        secondRow = `
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <span style="font-size: 0.85em; color: #999; font-weight: 600; min-width: 35px;">SF:</span>
+                                <select onchange="setGearStarForce('${slot.name}', this.value)"
+                                        style="padding: 4px 8px; border-radius: 0; border: 1px solid #666; background: #161616; color: #c6c6c6; font-weight: 600; font-size: 0.85em; cursor: pointer; flex: 1;">
+                                    ${starForceOptions.map(opt => `<option value="${opt}" ${sfLevel === opt ? 'selected' : ''}>${opt === 'Unused' ? 'Unused' : opt + '★'}</option>`).join('')}
+                                </select>
+                            </div>
+                        `;
+                    }
+
+                    return `
+                        <div class="boss-item" style="grid-column: ${slot.col}; grid-row: ${slot.row}; display: flex; flex-direction: column; padding: 18px 20px; min-height: 60px;">
+                            <span class="boss-name" style="font-size: 1.05em; margin-bottom: 10px;">${slot.name}</span>
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <span style="font-size: 0.85em; color: #999; font-weight: 600; min-width: 35px;">Type:</span>
+                                    <select onchange="setGearType('${slot.name}', this.value)"
+                                            style="padding: 4px 8px; border-radius: 0; border: 1px solid #666; background: #161616; color: #c6c6c6; font-weight: 600; font-size: 0.85em; cursor: pointer; flex: 1;">
+                                        <option value="" ${!gearType ? 'selected' : ''}>--</option>
+                                        ${availableOptions.map(opt => `<option value="${opt}" ${gearType === opt ? 'selected' : ''}>${opt}</option>`).join('')}
+                                    </select>
+                                </div>
+                                ${secondRow}
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+
+            ${renderEternalsStrategy(character)}
+        </div>
+    `;
+}
+
 function renderSellingStrategy() {
     const container = document.getElementById('sellingStrategyContent');
 
@@ -1722,6 +2301,8 @@ function initialize() {
             if (activeMainTab === 'bossCrystals') return tab.textContent.includes('Boss Crystals');
             if (activeMainTab === 'pitchTracker') return tab.textContent.includes('Pitched Tracker');
             if (activeMainTab === 'bhHistory') return tab.textContent.includes('BH History');
+            if (activeMainTab === 'sellingStrategy') return tab.textContent.includes('Selling Strategy');
+            if (activeMainTab === 'gearTracker') return tab.textContent.includes('Gear Tracker');
             return false;
         });
         if (activeTabButton) {
@@ -1741,6 +2322,11 @@ function initialize() {
             renderPitchContent();
         } else if (activeMainTab === 'bhHistory') {
             renderBHHistory();
+        } else if (activeMainTab === 'sellingStrategy') {
+            renderSellingStrategy();
+        } else if (activeMainTab === 'gearTracker') {
+            renderGearTrackerCharacterTabs();
+            renderGearTrackerContent();
         }
     }
 }
