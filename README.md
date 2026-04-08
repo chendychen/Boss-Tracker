@@ -2,6 +2,16 @@
 
 A browser-based tracker for MapleStory players to manage weekly boss crystal income, pitched gear, and equipment progression across multiple characters.
 
+## Install
+
+1. Download or clone the repository:
+   ```bash
+   git clone https://github.com/chendychen/Boss-Tracker.git
+   ```
+2. Open `boss_crystal_tracker.html` in any modern browser.
+
+No server, build step, or dependencies required. All data is stored locally in your browser via `localStorage`.
+
 ## Features
 
 ### Boss Crystals Tab
@@ -51,12 +61,6 @@ A browser-based tracker for MapleStory players to manage weekly boss crystal inc
 - Manual save button with confirmation indicator
 - Export all data to a `.json` file
 - Import from a previously exported `.json` file
-
-## Usage
-
-Open `boss_crystal_tracker.html` directly in a browser — no server or install required.
-
-> All data is stored locally in your browser. Use Export/Import to back up or transfer data between browsers/devices.
 
 ## Files
 
