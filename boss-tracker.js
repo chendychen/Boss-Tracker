@@ -2404,7 +2404,9 @@ const LEVEL_FD = {
 };
 
 const BOSS_TIME_LIMIT = 30 * 60;  // hard enrage timer, seconds
-const BURST_CYCLE = 120;          // burst cooldown, seconds
+const BURST_COOLDOWN = 120;       // nominal burst cooldown, seconds
+const BURST_CDR = 0.06;           // account-wide cooldown reduction buff
+const BURST_CYCLE = BURST_COOLDOWN * (1 - BURST_CDR);  // 112.8s -> 16 bursts in 30:00
 const BURST_WINDOW = 25;          // seconds of burst uptime
 const BURST_SHARE = 0.60;         // share of damage dealt inside the burst
 
@@ -2431,14 +2433,24 @@ function levelMultiplier(charLevel, bossLevel) {
  */
 function forceMultiplier(have, req, kind) {
     if (!req) return 1;
+    // A blank field means "capped": in practice a character reaches the +50 bonus
+    // cap well before it meets a boss's damage requirement, so force is almost
+    // never the binding constraint. Enter a value only to model being short.
+    if (have === null || have === undefined) return kind === 'af' ? 1.5 : 1.25;
     if (have < req) return null;
     if (kind === 'af') return Math.min(have / req, 1.5);
     return 1 + 0.05 * Math.min(Math.floor((have - req) / 10), 5);
 }
 
 function getCharLevel(character) { return character.charLevel || 270; }
-function getCharSacred(character) { return character.sacredForce || 0; }
-function getCharArcane(character) { return character.arcaneForce || 0; }
+function getCharSacred(character) {
+    return (character.sacredForce === null || character.sacredForce === undefined)
+        ? null : character.sacredForce;
+}
+function getCharArcane(character) {
+    return (character.arcaneForce === null || character.arcaneForce === undefined)
+        ? null : character.arcaneForce;
+}
 
 /**
  * Prices a boss for a character: how much damage they must actually output,
@@ -2501,6 +2513,16 @@ function damageByTime(t, avgDps) {
     let dmg = full * perCycle + burstDps * Math.min(rem, BURST_WINDOW);
     if (rem > BURST_WINDOW) dmg += offDps * (rem - BURST_WINDOW);
     return dmg;
+}
+
+/**
+ * How many bursts land inside the fight timer. Bursts fire at t = 0, C, 2C, ...
+ * while t is still under the limit, so an exact division lands the last burst
+ * on the cap itself and does not count.
+ * @returns {number}
+ */
+function burstsInFight() {
+    return Math.ceil(BOSS_TIME_LIMIT / BURST_CYCLE);
 }
 
 /** Inverse of damageByTime: seconds needed to deal dmg. */
@@ -2646,15 +2668,15 @@ function renderProgressionContent() {
                        onchange="updateProgressionField('charLevel', this.value)">
             </div>
             <div class="prog-field">
-                <label>Sacred Force</label>
+                <label>Sacred Force (blank = capped)</label>
                 <input type="number" min="0" max="1000" value="${character.sacredForce || ''}"
-                       placeholder="e.g. 380"
+                       placeholder="capped"
                        onchange="updateProgressionField('sacredForce', this.value)">
             </div>
             <div class="prog-field">
-                <label>Arcane Force</label>
+                <label>Arcane Force (blank = capped)</label>
                 <input type="number" min="0" max="2000" value="${character.arcaneForce || ''}"
-                       placeholder="e.g. 1320"
+                       placeholder="capped"
                        onchange="updateProgressionField('arcaneForce', this.value)">
             </div>
             <div class="prog-field prog-field-wide">
@@ -2704,7 +2726,8 @@ function renderProgressionContent() {
             <div><span class="prog-k">Burst (${BURST_WINDOW}s)</span><span class="prog-v">${(burstDps / 1e9).toFixed(0)}B/sec</span></div>
             <div><span class="prog-k">Off-burst</span><span class="prog-v">${(offDps / 1e9).toFixed(0)}B/sec</span></div>
             <div><span class="prog-k">Per burst</span><span class="prog-v">${fmtHP(perBurst)}</span></div>
-            <div><span class="prog-k">Bursts in 30:00</span><span class="prog-v">${Math.floor(BOSS_TIME_LIMIT / BURST_CYCLE)}</span></div>
+            <div><span class="prog-k">Bursts in 30:00</span><span class="prog-v">${burstsInFight()}</span></div>
+            <div><span class="prog-k">Cycle</span><span class="prog-v">${BURST_CYCLE.toFixed(0)}s</span></div>
         </div>
     `;
 
