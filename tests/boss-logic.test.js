@@ -59,14 +59,9 @@ function getBossValue(baseName, difficulty) {
     return boss.difficulties[difficulty].value;
 }
 
-function sortedBossListForCharacter(character) {
-    return [...bossData].sort((a, b) => {
-        const diffA = getBossDifficulty(character, a.baseName);
-        const diffB = getBossDifficulty(character, b.baseName);
-        const partyA = getBossPartyCount(character, a.baseName);
-        const partyB = getBossPartyCount(character, b.baseName);
-        return (getBossValue(b.baseName, diffB) / partyB) - (getBossValue(a.baseName, diffA) / partyA);
-    });
+// Mirrors renderBosses(): the list is filtered but never reordered per character.
+function bossListForCharacter(character, filter = '') {
+    return bossData.filter(b => b.baseName.toLowerCase().includes(filter.toLowerCase()));
 }
 
 function calculateTotal(character) {
@@ -108,10 +103,17 @@ describe('parseBossName', () => {
     });
 });
 
+// Reads a crystal value straight from the data, so price updates don't break tests.
+function bossValue(baseName, difficulty) {
+    return bossData.find(b => b.baseName === baseName).difficulties[difficulty].value;
+}
+
 describe('buildBossData', () => {
-    test('Black Mage is not in boss list', () => {
-        const names = bossData.map(b => b.baseName);
-        assert.ok(!names.includes('Black Mage'), 'Black Mage should have been removed');
+    test('Black Mage is in the boss list with both difficulties', () => {
+        const blackMage = bossData.find(b => b.baseName === 'Black Mage');
+        assert.ok(blackMage, 'Black Mage should exist');
+        assert.ok('Extreme' in blackMage.difficulties);
+        assert.ok('Hard' in blackMage.difficulties);
     });
 
     test('bosses are grouped correctly — Kaling has multiple difficulties', () => {
@@ -136,38 +138,35 @@ describe('buildBossData', () => {
     });
 });
 
-describe('dynamic boss sorting', () => {
-    test('default order matches static list (no overrides)', () => {
-        const char = makeCharacter();
-        const sorted = sortedBossListForCharacter(char);
-        assert.deepEqual(sorted.map(b => b.baseName), bossData.map(b => b.baseName));
+describe('boss list ordering', () => {
+    test('each group sorts on its highest-difficulty price', () => {
+        bossData.forEach(boss => {
+            const highest = Math.max(...Object.values(boss.difficulties).map(d => d.value));
+            assert.equal(boss.value, highest, `${boss.baseName} should sort on its highest difficulty`);
+        });
     });
 
-    test('switching to lower difficulty pushes boss down', () => {
-        const char = makeCharacter({ bossDifficulty: { Kaling: 'Easy' } });
-        const sorted = sortedBossListForCharacter(char);
-        const kalingIdx = sorted.findIndex(b => b.baseName === 'Kaling');
-        const defaultIdx = bossData.findIndex(b => b.baseName === 'Kaling');
-        assert.ok(kalingIdx > defaultIdx, `Kaling on Easy (idx ${kalingIdx}) should be below its default position (idx ${defaultIdx})`);
+    test('list is ordered by highest-difficulty price, descending', () => {
+        const values = bossListForCharacter(makeCharacter()).map(b => b.value);
+        assert.deepEqual(values, [...values].sort((a, b) => b - a));
     });
 
-    test('party size 6 divides value and drops boss in ranking', () => {
-        // Kaling Extreme = 6030M / 6 = 1005M — should rank lower than at solo
-        const char = makeCharacter({ bossPartyCount: { Kaling: 6 } });
-        const sorted = sortedBossListForCharacter(char);
-        const kalingIdx = sorted.findIndex(b => b.baseName === 'Kaling');
-        const defaultIdx = bossData.findIndex(b => b.baseName === 'Kaling');
-        assert.ok(kalingIdx > defaultIdx, `Kaling party-6 (idx ${kalingIdx}) should rank below its default position (idx ${defaultIdx})`);
+    test('choosing a lower difficulty does not reorder the list', () => {
+        const base = bossListForCharacter(makeCharacter()).map(b => b.baseName);
+        const char = makeCharacter({ bossDifficulty: { Kaling: 'Easy', Lotus: 'Hard' } });
+        assert.deepEqual(bossListForCharacter(char).map(b => b.baseName), base);
     });
 
-    test('adjusted value is used for sort, not raw value', () => {
-        // Give Lotus party=1, Kaling party=6
-        // Lotus Extreme = 1400M, Kaling Extreme / 6 = 1005M → Lotus should come first
-        const char = makeCharacter({ bossPartyCount: { Kaling: 6 } });
-        const sorted = sortedBossListForCharacter(char);
-        const lotusIdx = sorted.findIndex(b => b.baseName === 'Lotus');
-        const kalingIdx = sorted.findIndex(b => b.baseName === 'Kaling');
-        assert.ok(lotusIdx < kalingIdx, `Lotus (${lotusIdx}) should rank above Kaling party-6 (${kalingIdx})`);
+    test('party size does not reorder the list', () => {
+        const base = bossListForCharacter(makeCharacter()).map(b => b.baseName);
+        const char = makeCharacter({ bossPartyCount: { Kaling: 6, 'Black Mage': 6 } });
+        assert.deepEqual(bossListForCharacter(char).map(b => b.baseName), base);
+    });
+
+    test('filtering preserves the fixed order', () => {
+        const base = bossListForCharacter(makeCharacter()).map(b => b.baseName);
+        const filtered = bossListForCharacter(makeCharacter(), 'a').map(b => b.baseName);
+        assert.deepEqual(filtered, base.filter(n => n.toLowerCase().includes('a')));
     });
 });
 
@@ -180,8 +179,7 @@ describe('calculateTotal', () => {
         const char = makeCharacter({
             selectedBosses: new Set(['Kaling', 'Lotus']),
         });
-        // Extreme Kaling = 6030, Extreme Lotus = 1400
-        const expected = 6030 + 1400;
+        const expected = bossValue('Kaling', 'Extreme') + bossValue('Lotus', 'Extreme');
         assert.equal(calculateTotal(char), expected);
     });
 
@@ -190,7 +188,7 @@ describe('calculateTotal', () => {
             selectedBosses: new Set(['Kaling']),
             bossPartyCount: { Kaling: 2 }
         });
-        assert.equal(calculateTotal(char), 6030 / 2);
+        assert.equal(calculateTotal(char), bossValue('Kaling', 'Extreme') / 2);
     });
 
     test('caps at 14 bosses, keeping highest adjusted values', () => {

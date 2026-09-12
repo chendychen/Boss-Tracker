@@ -319,6 +319,32 @@ body {
     border-left-color: var(--cds-interactive-active);
 }
 
+.boss-label {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-03);
+    min-width: 0;
+}
+
+.boss-icon {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    object-fit: cover;
+    border: 1px solid var(--cds-border-subtle);
+    background: var(--cds-layer-02);
+    image-rendering: auto;
+}
+
+.boss-item.selected .boss-icon {
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+.boss-icon-sm {
+    width: 26px;
+    height: 26px;
+}
+
 .boss-name {
     font-weight: 500;
     font-size: 0.875rem;

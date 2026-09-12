@@ -1,35 +1,41 @@
 // Embedded game data (for local file:// protocol compatibility)
 const GAME_DATA = {
     "bosses": [
-        { "name": "Extreme Kaling", "price": "6.03B", "value": 6030 },
+        { "name": "Extreme Black Mage", "price": "18B", "value": 18000 },
+        { "name": "Extreme Kaling", "price": "6.03B", "value": 6026 },
+        { "name": "Hard Jupiter", "price": "5.95B", "value": 5953 },
         { "name": "Extreme First Adversary", "price": "5.88B", "value": 5880 },
         { "name": "Extreme Kalos the Guardian", "price": "5.2B", "value": 5200 },
-        { "name": "Extreme Chosen Seren", "price": "4.24B", "value": 4240 },
+        { "name": "Hard Black Mage", "price": "4.5B", "value": 4500 },
+        { "name": "Extreme Chosen Seren", "price": "4.24B", "value": 4235 },
         { "name": "Hard Baldrix", "price": "4.2B", "value": 4200 },
-        { "name": "Hard Limbo", "price": "3.75B", "value": 3750 },
+        { "name": "Hard Malefic Star", "price": "3.99B", "value": 3990 },
+        { "name": "Hard Limbo", "price": "3.75B", "value": 3745 },
         { "name": "Hard Kaling", "price": "2.99B", "value": 2990 },
+        { "name": "Normal Jupiter", "price": "2.97B", "value": 2965 },
         { "name": "Hard First Adversary", "price": "2.94B", "value": 2940 },
         { "name": "Normal Baldrix", "price": "2.8B", "value": 2800 },
         { "name": "Chaos Kalos the Guardian", "price": "2.6B", "value": 2600 },
         { "name": "Normal Limbo", "price": "2.1B", "value": 2100 },
-        { "name": "Normal Kaling", "price": "1.51B", "value": 1510 },
-        { "name": "Extreme Lotus", "price": "1.4B", "value": 1400 },
-        { "name": "Normal First Adversary", "price": "1.37B", "value": 1370 },
+        { "name": "Normal Kaling", "price": "1.51B", "value": 1506.5 },
+        { "name": "Normal Malefic Star", "price": "1.45B", "value": 1452 },
+        { "name": "Extreme Lotus", "price": "1.4B", "value": 1397.5 },
+        { "name": "Normal First Adversary", "price": "1.37B", "value": 1365 },
         { "name": "Normal Kalos the Guardian", "price": "1.3B", "value": 1300 },
-        { "name": "Hard Chosen Seren", "price": "1.1B", "value": 1100 },
-        { "name": "Easy Kaling", "price": "1.03B", "value": 1030 },
+        { "name": "Hard Chosen Seren", "price": "1.1B", "value": 1096.5625 },
+        { "name": "Easy Kaling", "price": "1.03B", "value": 1031.25 },
         { "name": "Easy First Adversary", "price": "985M", "value": 985 },
         { "name": "Easy Kalos the Guardian", "price": "937.5M", "value": 937.5 },
-        { "name": "Normal Chosen Seren", "price": "889.02M", "value": 889.02 },
-        { "name": "Hard Verus Hilla", "price": "762.11M", "value": 762.11 },
+        { "name": "Normal Chosen Seren", "price": "889.02M", "value": 889.021875 },
+        { "name": "Hard Verus Hilla", "price": "762.11M", "value": 762.105 },
         { "name": "Hard Darknell", "price": "667.92M", "value": 667.92 },
         { "name": "Hard Will", "price": "621.81M", "value": 621.81 },
-        { "name": "Chaos Guardian Angel Slime", "price": "600.58M", "value": 600.58 },
+        { "name": "Chaos Guardian Angel Slime", "price": "600.58M", "value": 600.578125 },
         { "name": "Normal Verus Hilla", "price": "581.88M", "value": 581.88 },
-        { "name": "Chaos Gloom", "price": "563.95M", "value": 563.95 },
-        { "name": "Hard Lucid", "price": "501M", "value": 501 },
-        { "name": "Hard Damien", "price": "421.88M", "value": 421.88 },
-        { "name": "Hard Lotus", "price": "414.68M", "value": 444.68 }
+        { "name": "Chaos Gloom", "price": "563.95M", "value": 563.945 },
+        { "name": "Hard Lucid", "price": "504M", "value": 504 },
+        { "name": "Hard Lotus", "price": "444.68M", "value": 444.675 },
+        { "name": "Hard Damien", "price": "421.88M", "value": 421.875 }
     ],
     "pitchedGear": [
         {
@@ -48,6 +54,56 @@ const GAME_DATA = {
     ],
     "noSparesItems": ["Cursed Spellbook", "Genesis Badge", "Mitra's Rage"]
 };
+
+// Boss profile icons, cropped from the in-game Soul Crystal price list.
+// Files live in images/bosses/ and are named after the slugified full boss name.
+const BOSS_ICON_NAMES = new Set([
+    "Extreme Black Mage", "Extreme Kaling", "Hard Jupiter", "Extreme First Adversary",
+    "Extreme Kalos the Guardian", "Hard Black Mage", "Extreme Chosen Seren", "Hard Baldrix",
+    "Hard Malefic Star", "Hard Limbo", "Hard Kaling", "Normal Jupiter",
+    "Hard First Adversary", "Normal Baldrix", "Chaos Kalos the Guardian", "Normal Limbo",
+    "Normal Kaling", "Normal Malefic Star", "Extreme Lotus", "Normal First Adversary",
+    "Normal Kalos the Guardian", "Hard Chosen Seren", "Easy Kaling", "Easy First Adversary",
+    "Easy Kalos the Guardian", "Normal Chosen Seren", "Hard Verus Hilla", "Hard Darknell",
+    "Hard Will", "Chaos Guardian Angel Slime", "Normal Verus Hilla", "Chaos Gloom",
+    "Hard Lucid", "Hard Lotus", "Hard Damien"
+]);
+
+/**
+ * Resolves the icon path for a boss at a given difficulty.
+ * Falls back to any other difficulty of the same boss when that exact
+ * combination has no artwork, and returns null when nothing matches.
+ * @param {string} baseName - Boss name without the difficulty prefix
+ * @param {string} [difficulty] - Preferred difficulty
+ * @returns {string|null} Relative image path, or null if no icon exists
+ */
+function getBossIconPath(baseName, difficulty) {
+    const slug = name => `images/bosses/${name.toLowerCase().replace(/'/g, '').replace(/ /g, '-')}.png`;
+
+    if (difficulty && BOSS_ICON_NAMES.has(`${difficulty} ${baseName}`)) {
+        return slug(`${difficulty} ${baseName}`);
+    }
+    const group = bossGroups[baseName];
+    if (group) {
+        const match = Object.values(group.difficulties)
+            .find(d => BOSS_ICON_NAMES.has(d.fullName));
+        if (match) return slug(match.fullName);
+    }
+    return BOSS_ICON_NAMES.has(baseName) ? slug(baseName) : null;
+}
+
+/**
+ * Builds the <img> markup for a boss icon, or an empty string when none exists.
+ * @param {string} baseName - Boss name without the difficulty prefix
+ * @param {string} [difficulty] - Preferred difficulty
+ * @param {string} [extraClass] - Additional CSS class for the image
+ * @returns {string} HTML for the icon
+ */
+function renderBossIcon(baseName, difficulty, extraClass = '') {
+    const path = getBossIconPath(baseName, difficulty);
+    if (!path) return '';
+    return `<img class="boss-icon ${extraClass}" src="${path}" alt="" loading="lazy">`;
+}
 
 // Global variables for game data
 let bossDataFlat = GAME_DATA.bosses;
@@ -594,15 +650,10 @@ function renderBosses(filter = '') {
     const character = getActiveCharacter();
     if (!character) return '';
 
+    // bossData is already ordered by each boss's highest-difficulty price, descending.
+    // The list stays in that fixed order — picking a difficulty or party size never reorders it.
     const filteredBosses = bossData
-        .filter(boss => boss.baseName.toLowerCase().includes(filter.toLowerCase()))
-        .sort((a, b) => {
-            const diffA = getBossDifficulty(character, a.baseName);
-            const diffB = getBossDifficulty(character, b.baseName);
-            const partyA = getBossPartyCount(character, a.baseName);
-            const partyB = getBossPartyCount(character, b.baseName);
-            return (getBossValue(b.baseName, diffB) / partyB) - (getBossValue(a.baseName, diffA) / partyA);
-        });
+        .filter(boss => boss.baseName.toLowerCase().includes(filter.toLowerCase()));
 
     return filteredBosses.map(boss => {
         const isSelected = character.selectedBosses.has(boss.baseName);
@@ -617,7 +668,7 @@ function renderBosses(filter = '') {
         return `
             <div class="boss-item ${isSelected ? 'selected' : ''}"
                  onclick="toggleBoss('${boss.baseName}')" data-boss="${boss.baseName}">
-                <span class="boss-name">${sanitizedBossName}</span>
+                <span class="boss-label">${renderBossIcon(boss.baseName, difficulty)}<span class="boss-name">${sanitizedBossName}</span></span>
                 <div style="display: flex; align-items: center; gap: 6px;">
                     ${isSelected && difficulties.length > 1 ? `
                         <select onchange="event.stopPropagation(); updateBossDifficulty('${boss.baseName}', this.value)"
@@ -701,7 +752,7 @@ function updateBossItemState(bossBaseName) {
         // Update inner HTML to show/hide dropdowns
         const sanitizedBossName = sanitizeInput(boss.baseName);
         bossItem.innerHTML = `
-            <span class="boss-name">${sanitizedBossName}</span>
+            <span class="boss-label">${renderBossIcon(boss.baseName, difficulty)}<span class="boss-name">${sanitizedBossName}</span></span>
             <div style="display: flex; align-items: center; gap: 6px;">
                 ${isSelected && difficulties.length > 1 ? `
                     <select onchange="event.stopPropagation(); updateBossDifficulty('${boss.baseName}', this.value)"
@@ -2240,7 +2291,8 @@ function renderSellingStrategy() {
     allBosses.forEach(b => {
         if (!overflowKeys.has(`${b.characterId}:${b.baseName}`)) return;
         const label = `${b.difficulty} ${b.baseName}`;
-        if (!byBoss[label]) byBoss[label] = { label, adjustedValue: b.adjustedValue, chars: [] };
+        if (!byBoss[label]) byBoss[label] = { label, baseName: b.baseName, difficulty: b.difficulty,
+                                                adjustedValue: b.adjustedValue, chars: [] };
         byBoss[label].chars.push({ name: b.characterName, partyCount: b.partyCount });
     });
 
@@ -2259,7 +2311,8 @@ function renderSellingStrategy() {
                         background: #393939; border-left: 3px solid #da1e28;
                         border-radius: 0; padding: 10px 16px; margin-bottom: 8px; gap: 12px;">
                 <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1;">
-                    <span style="color: #c6c6c6; font-weight: 700; white-space: nowrap;">${sanitizeInput(group.label)}</span>
+                    ${renderBossIcon(group.baseName, group.difficulty, 'boss-icon-sm')}
+                    <span style="color: #c6c6c6; font-weight: 700; white-space: nowrap;">${sanitizeInput(group.label)} <span style="color: #da1e28;">x${group.chars.length}</span></span>
                     <div style="display: flex; gap: 6px; flex-wrap: wrap;">${charTags}</div>
                 </div>
                 <span style="color: #da1e28; font-weight: bold; white-space: nowrap;">${formatValue(group.adjustedValue)}</span>

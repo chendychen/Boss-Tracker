@@ -16,6 +16,7 @@ No server, build step, or dependencies required. All data is stored locally in y
 
 ### Boss Crystals Tab
 - Select which bosses each character clears weekly
+- Boss profile icons cropped from the in-game Soul Crystal price list, swapping with the selected difficulty
 - Choose difficulty per boss (Extreme / Hard / Chaos / Normal / Easy)
 - Set party size per boss (crystals split between party members)
 - Auto-calculates weekly meso income per character
@@ -69,10 +70,11 @@ No server, build step, or dependencies required. All data is stored locally in y
 | `boss_crystal_tracker.html` | Main app entry point |
 | `boss-tracker.js` | All application logic |
 | `styles.css` | Shared stylesheet |
+| `images/bosses/` | Boss profile icons, one per boss + difficulty |
 
 ## Boss Data
 
-Contains 31 bosses ranging from Hard Lotus (~444M mesos) up to Extreme Black Mage (18B mesos). Prices reflect crystal market values and are embedded directly in `boss-tracker.js` for offline compatibility.
+Contains 35 bosses across 17 boss groups, ranging from Hard Damien (~422M mesos) up to Extreme Black Mage (18B mesos). Prices reflect the in-game Intense Power Crystal values and are embedded directly in `boss-tracker.js` for offline compatibility, mirrored in `boss-data.json` for the test suite.
 
 ## Pitched Gear Tracked
 
