@@ -23,6 +23,7 @@
             <button class="main-tab" onclick="switchMainTab('bhHistory')">🖤 BH History</button>
             <button class="main-tab" onclick="switchMainTab('sellingStrategy')">💰 Selling Strategy</button>
             <button class="main-tab" onclick="switchMainTab('gearTracker')">🛡️ Gear Tracker</button>
+            <button class="main-tab" onclick="switchMainTab('progression')">📈 Progression</button>
         </div>
         
         <div class="main-content">
@@ -75,6 +76,20 @@
             <!-- Selling Strategy Tab -->
             <div id="sellingStrategyTab" class="tab-content">
                 <div id="sellingStrategyContent"></div>
+            </div>
+
+            <!-- Progression Tab -->
+            <div id="progressionTab" class="tab-content">
+                <div class="character-section">
+                    <div class="character-controls">
+                        <button class="save-btn" onclick="manualSave()">💾 Save</button>
+                        <span class="save-status" id="saveStatus">✓ Saved!</span>
+                    </div>
+
+                    <div class="character-tabs" id="progressionCharacterTabs"></div>
+                </div>
+
+                <div id="progressionContent"></div>
             </div>
 
             <!-- Gear Tracker Tab -->

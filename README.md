@@ -52,6 +52,14 @@ No server, build step, or dependencies required. All data is stored locally in y
   - Considers both acquiring new Eternal pieces and upgrading SF on existing ones
   - Displays current cumulative FD from equipped Eternals
 
+### Progression Tab
+- Models effective HP per boss: raw HP divided by level-advantage and Arcane/Sacred Force multipliers
+- Per-character level, Sacred Force and Arcane Force inputs
+- Derives your sustained damage by calibrating from a boss you already clear (or set DPS directly)
+- Phase-by-phase pace against the 30:00 enrage timer, including per-phase monster level (Normal Kalos P1 is level 275 while P2 is 280, so they price differently)
+- Models the 2-minute burst cadence (60% of damage in a ~25s window) and reports slack as **bursts you can waste**
+- Flags each boss as clearing, tight (under 2 bursts spare), short by N bursts, or blocked below the force floor
+
 ### Multi-Character Management
 - Add, rename, copy, delete, and reorganize characters
 - Active character highlighted with tab navigation
@@ -71,6 +79,7 @@ No server, build step, or dependencies required. All data is stored locally in y
 | `boss-tracker.js` | All application logic |
 | `styles.css` | Shared stylesheet |
 | `images/bosses/` | Boss profile icons, one per boss + difficulty |
+| `BOSS_COMBAT` in `boss-tracker.js` | Per-phase boss HP, monster levels and force floors |
 
 ## Boss Data
 

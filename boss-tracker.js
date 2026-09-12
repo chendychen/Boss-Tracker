@@ -263,37 +263,91 @@ function switchMainTab(tabName) {
     } else if (tabName === 'gearTracker') {
         renderGearTrackerCharacterTabs();
         renderGearTrackerContent();
+    } else if (tabName === 'progression') {
+        renderProgressionCharacterTabs();
+        renderProgressionContent();
     }
 }
 
 // LocalStorage functions
+/**
+ * Serialises one character to a plain JSON-safe object.
+ * Every persistence path (localStorage save and file export) goes through this
+ * so the four of them cannot drift apart and silently drop fields.
+ * @param {object} char
+ * @returns {object}
+ */
+function serializeCharacter(char) {
+    const subOptionsObj = {};
+    if (char.pitchedGearSubOptions) {
+        for (const [key, value] of Object.entries(char.pitchedGearSubOptions)) {
+            subOptionsObj[key] = Array.from(value);
+        }
+    }
+    return {
+        id: char.id,
+        name: char.name,
+        selectedBosses: Array.from(char.selectedBosses || new Set()),
+        bossPartyCount: char.bossPartyCount || {},
+        bossDifficulty: char.bossDifficulty || {},
+        pitchedGear: Array.from(char.pitchedGear || new Set()),
+        pitchedGearSubOptions: subOptionsObj,
+        pitchedGearSpares: char.pitchedGearSpares || {},
+        pitchedGearStarForce: char.pitchedGearStarForce || {},
+        pitchHistory: char.pitchHistory || [],
+        gearStarForce: char.gearStarForce || {},
+        gearType: char.gearType || {},
+        gearLevel: char.gearLevel || {},
+        charLevel: char.charLevel || 270,
+        sacredForce: char.sacredForce || null,
+        arcaneForce: char.arcaneForce || null,
+        calibBoss: char.calibBoss || null,
+        calibDifficulty: char.calibDifficulty || null,
+        calibMinutes: char.calibMinutes || null,
+        manualDps: char.manualDps || null
+    };
+}
+
+/**
+ * Rebuilds a character from its serialised form, restoring Sets and filling
+ * defaults for fields written by older versions of the app.
+ * @param {object} char
+ * @returns {object}
+ */
+function deserializeCharacter(char) {
+    const subOptionsObj = {};
+    if (char.pitchedGearSubOptions) {
+        for (const [key, value] of Object.entries(char.pitchedGearSubOptions)) {
+            subOptionsObj[key] = new Set(value);
+        }
+    }
+    return {
+        id: char.id,
+        name: char.name,
+        selectedBosses: new Set(char.selectedBosses || []),
+        bossPartyCount: char.bossPartyCount || {},
+        bossDifficulty: char.bossDifficulty || {},
+        pitchedGear: new Set(char.pitchedGear || []),
+        pitchedGearSubOptions: subOptionsObj,
+        pitchedGearSpares: char.pitchedGearSpares || {},
+        pitchedGearStarForce: char.pitchedGearStarForce || {},
+        pitchHistory: char.pitchHistory || [],
+        gearStarForce: char.gearStarForce || {},
+        gearType: char.gearType || {},
+        gearLevel: char.gearLevel || {},
+        charLevel: char.charLevel || 270,
+        sacredForce: char.sacredForce || null,
+        arcaneForce: char.arcaneForce || null,
+        calibBoss: char.calibBoss || null,
+        calibDifficulty: char.calibDifficulty || null,
+        calibMinutes: char.calibMinutes || null,
+        manualDps: char.manualDps || null
+    };
+}
+
 function saveToLocalStorage() {
     const data = {
-        characters: characters.map(char => {
-            // Convert pitchedGearSubOptions Sets to Arrays for JSON
-            const subOptionsObj = {};
-            if (char.pitchedGearSubOptions) {
-                for (const [key, value] of Object.entries(char.pitchedGearSubOptions)) {
-                    subOptionsObj[key] = Array.from(value);
-                }
-            }
-            
-            return {
-                id: char.id,
-                name: char.name,
-                selectedBosses: Array.from(char.selectedBosses),
-                bossPartyCount: char.bossPartyCount || {},
-                bossDifficulty: char.bossDifficulty || {},
-                pitchedGear: Array.from(char.pitchedGear || new Set()),
-                pitchedGearSubOptions: subOptionsObj,
-                pitchedGearSpares: char.pitchedGearSpares || {},
-                pitchedGearStarForce: char.pitchedGearStarForce || {},
-                pitchHistory: char.pitchHistory || [],
-                gearStarForce: char.gearStarForce || {},
-                gearType: char.gearType || {},
-                gearLevel: char.gearLevel || {}
-            };
-        }),
+        characters: characters.map(serializeCharacter),
         activeCharacterId: activeCharacterId,
         nextCharacterId: nextCharacterId,
         activeMainTab: activeMainTab,
@@ -307,31 +361,7 @@ function loadFromLocalStorage() {
     if (saved) {
         try {
             const data = JSON.parse(saved);
-            characters = data.characters.map(char => {
-                // Convert pitchedGearSubOptions Arrays back to Sets
-                const subOptionsObj = {};
-                if (char.pitchedGearSubOptions) {
-                    for (const [key, value] of Object.entries(char.pitchedGearSubOptions)) {
-                        subOptionsObj[key] = new Set(value);
-                    }
-                }
-                
-                return {
-                    id: char.id,
-                    name: char.name,
-                    selectedBosses: new Set(char.selectedBosses),
-                    bossPartyCount: char.bossPartyCount || {},
-                    bossDifficulty: char.bossDifficulty || {},
-                    pitchedGear: new Set(char.pitchedGear || []),
-                    pitchedGearSubOptions: subOptionsObj,
-                    pitchedGearSpares: char.pitchedGearSpares || {},
-                    pitchedGearStarForce: char.pitchedGearStarForce || {},
-                    pitchHistory: char.pitchHistory || [],
-                    gearStarForce: char.gearStarForce || {},
-                    gearType: char.gearType || {},
-                    gearLevel: char.gearLevel || {}
-                };
-            });
+            characters = data.characters.map(deserializeCharacter);
             activeCharacterId = data.activeCharacterId;
             nextCharacterId = data.nextCharacterId;
             activeMainTab = data.activeMainTab || 'bossCrystals';
@@ -360,13 +390,7 @@ function showSaveStatus() {
 
 async function exportData() {
     const data = {
-        characters: characters.map(char => ({
-            id: char.id,
-            name: char.name,
-            selectedBosses: Array.from(char.selectedBosses),
-            bossPartyCount: char.bossPartyCount || {},
-            bossDifficulty: char.bossDifficulty || {}
-        })),
+        characters: characters.map(serializeCharacter),
         activeCharacterId: activeCharacterId,
         nextCharacterId: nextCharacterId,
         exportDate: new Date().toISOString(),
@@ -438,12 +462,7 @@ function importData(event) {
             }
 
             // Load the imported data
-            characters = data.characters.map(char => ({
-                id: char.id,
-                name: char.name,
-                selectedBosses: new Set(char.selectedBosses || []),
-                bossPartyCount: char.bossPartyCount || {}
-            }));
+            characters = data.characters.map(deserializeCharacter);
             activeCharacterId = data.activeCharacterId || (characters.length > 0 ? characters[0].id : null);
             nextCharacterId = data.nextCharacterId || (Math.max(...characters.map(c => c.id), 0) + 1);
 
@@ -478,7 +497,14 @@ function addCharacter() {
         pitchHistory: [], // Store pitch history events
         gearStarForce: {}, // Store star force level per gear slot
         gearType: {}, // Store gear type per gear slot
-        gearLevel: {} // Store level for RoR/Cont rings
+        gearLevel: {}, // Store level for RoR/Cont rings
+        charLevel: 270,          // for level-advantage damage modifier
+        sacredForce: null,       // Sacred Force total
+        arcaneForce: null,       // Arcane Force total
+        calibBoss: null,         // boss used to derive this character's DPS
+        calibDifficulty: null,
+        calibMinutes: null,
+        manualDps: null,         // B/sec override, wins over calibration
     };
     characters.push(newCharacter);
     activeCharacterId = newCharacter.id;
@@ -507,6 +533,13 @@ function copyCurrentCharacter() {
         gearStarForce: { ...currentChar.gearStarForce }, // Copy gear star force levels
         gearType: { ...currentChar.gearType }, // Copy gear types
         gearLevel: { ...currentChar.gearLevel }, // Copy gear levels
+        charLevel: currentChar.charLevel || 270,
+        sacredForce: currentChar.sacredForce || null,
+        arcaneForce: currentChar.arcaneForce || null,
+        calibBoss: currentChar.calibBoss || null,
+        calibDifficulty: currentChar.calibDifficulty || null,
+        calibMinutes: currentChar.calibMinutes || null,
+        manualDps: currentChar.manualDps || null,
         pitchHistory: [...(currentChar.pitchHistory || [])] // Copy history
     };
     
@@ -2331,6 +2364,430 @@ function renderSellingStrategy() {
         </div>`;
 }
 
+
+// ============================================================================
+// Progression model
+// ----------------------------------------------------------------------------
+// Boss combat data (HP per phase, monster level, Sacred/Arcane Force floors)
+// comes from the in-game boss HP tables. A phase is [hp, monsterLevel,
+// sacRequirement, segments]; some phases sit at a different level to the boss
+// as a whole (Normal Kalos P1 is 275 while P2 is 280), which changes the level
+// modifier mid-fight, so phases are priced individually.
+// ============================================================================
+
+const BOSS_COMBAT = {
+    "Baldrix": {"Normal":{lv:290,sac:700,af:null,ph:[[2379800000000000,290,700,1],[2531700000000000,290,700,1],[4145400000000000.5,290,700,1]]}, "Hard":{lv:290,sac:700,af:null,ph:[[5344600000000000,290,700,1],[5685800000000000,290,700,1],[9309000000000000,290,700,1]]}},
+    "Black Mage": {"Hard":{lv:275,sac:null,af:1320,ph:[[63000000000000,265,null,1],[115500000000000,275,null,1],[157500000000000,275,null,1],[136500000000000,265,null,1]]}, "Extreme":{lv:280,sac:null,af:1320,ph:[[1180000000000000,275,null,1],[1190000000000000,280,null,1],[1285000000000000,280,null,1],[1152000000000000,280,null,1]]}},
+    "Chosen Seren": {"Normal":{lv:270,sac:200,af:null,ph:[[52500000000000,270,150,1],[155500000000000,270,200,1]]}, "Hard":{lv:275,sac:200,af:null,ph:[[126000000000000,275,150,1],[357000000000000,275,200,1]]}, "Extreme":{lv:280,sac:200,af:null,ph:[[1320000000000000,275,150,1],[5160000000000000,280,200,1]]}},
+    "Damien": {"Normal":{lv:210,sac:null,af:null,ph:[[840000000000,210,null,1],[360000000000,210,null,1]]}, "Hard":{lv:210,sac:null,af:null,ph:[[25200000000000,210,null,1],[10800000000000,210,null,1]]}},
+    "Darknell": {"Normal":{lv:265,sac:null,af:850,ph:[[26000000000000,265,null,1]]}, "Hard":{lv:265,sac:null,af:850,ph:[[157500000000000,265,null,1]]}},
+    "First Adversary": {"Easy":{lv:270,sac:220,af:null,ph:[[171537000000000,270,220,1],[171537000000000,270,220,1],[228011000000000,270,220,1]]}, "Normal":{lv:280,sac:320,af:null,ph:[[494111000000000,280,320,1],[494111000000000,280,320,1],[646783000000000,280,320,1]]}, "Hard":{lv:285,sac:340,af:null,ph:[[3180000000000000,285,340,1],[3180000000000000,285,340,1],[4227000000000000.5,285,340,1]]}, "Extreme":{lv:290,sac:460,af:null,ph:[[10080000000000000,290,460,1],[10080000000000000,290,460,1],[13400000000000000,290,460,1]]}},
+    "Gloom": {"Normal":{lv:255,sac:null,af:730,ph:[[25500000000000,255,null,1]]}, "Chaos":{lv:255,sac:null,af:730,ph:[[127500000000000,255,null,1]]}},
+    "Guardian Angel Slime": {"Normal":{lv:220,sac:null,af:null,ph:[[5000000000000,220,null,1]]}, "Chaos":{lv:220,sac:null,af:null,ph:[[90000000000000,220,null,1]]}},
+    "Jupiter": {"Normal":{lv:295,sac:810,af:null,n:["Phase 1","Phase 2","Phase 3"],ph:[[2049999999999999.8,295,810,1],[3080000000000000,295,810,1],[5130000000000000,295,810,1]]}, "Hard":{lv:295,sac:810,af:null,n:["Phase 1","Phase 2","Phase 3"],ph:[[9880000000000000,295,810,1],[14820000000000000,295,810,1],[24700000000000000,295,810,1]]}},
+    "Kaling": {"Easy":{lv:275,sac:230,af:null,n:["Phase 1: Perils","","Phase 3: Kaling","Phase 3: Perils"],ph:[[288000000000000,275,230,3],[105000000000000,275,230,1],[150000000000000,275,230,1],[378000000000000,275,230,3]]}, "Normal":{lv:285,sac:330,af:null,n:["Phase 1: Perils","","Phase 3: Kaling","Phase 3: Perils"],ph:[[1200000000000000,285,330,3],[468000000000000,285,330,1],[722000000000000,285,330,1],[1536000000000000,285,330,3]]}, "Hard":{lv:285,sac:350,af:null,n:["Phase 1: Perils","","Phase 3: Kaling","Phase 3: Perils"],ph:[[2718000000000000,285,350,3],[1404000000000000,285,350,1],[2240000000000000.2,285,350,1],[5481000000000000,285,350,3]]}, "Extreme":{lv:285,sac:480,af:null,n:["Phase 1: Perils","","Phase 3: Kaling","Phase 3: Perils"],ph:[[18200000000000000,285,480,3],[6930000000000000,285,480,1],[8662000000000001,285,480,1],[20800000000000000,285,480,3]]}},
+    "Kalos the Guardian": {"Easy":{lv:270,sac:200,af:null,ph:[[94500000000000,270,200,1],[262500000000000,270,200,4]]}, "Normal":{lv:280,sac:300,af:null,ph:[[336000000000000,275,250,1],[720000000000000,280,300,4]]}, "Chaos":{lv:285,sac:330,af:null,ph:[[1060000000000000,285,330,1],[4059999999999999.5,285,330,4]]}, "Extreme":{lv:285,sac:440,af:null,ph:[[5970000000000000,285,440,1],[15600000000000000,285,440,4]]}},
+    "Limbo": {"Normal":{lv:285,sac:500,af:null,ph:[[1940000000000000,285,500,1],[1940000000000000,285,500,2],[2600000000000000,285,500,1]]}, "Hard":{lv:285,sac:500,af:null,ph:[[3780000000000000,285,500,1],[3780000000000000,285,500,2],[4990000000000000,285,500,1]]}},
+    "Lotus": {"Normal":{lv:210,sac:null,af:null,ph:[[470000000000,210,null,1],[470000000000,210,null,1],[630000000000,210,null,1]]}, "Hard":{lv:210,sac:null,af:null,ph:[[10000000000000,210,null,1],[10000000000000,210,null,1],[13500000000000,210,null,1]]}, "Extreme":{lv:285,sac:null,af:null,ph:[[545000000000000,285,null,1],[545000000000000,285,null,1],[720000000000000,285,null,1]]}},
+    "Lucid": {"Easy":{lv:230,sac:null,af:360,ph:[[6000000000000,230,null,1],[6000000000000,230,null,1]]}, "Normal":{lv:230,sac:null,af:360,ph:[[12000000000000,230,null,1],[12000000000000,230,null,1]]}, "Hard":{lv:230,sac:null,af:360,ph:[[50800000000000,230,null,1],[54000000000000,230,null,1],[12800000000000,230,null,1]]}},
+    "Malefic Star": {"Normal":{lv:280,sac:400,af:null,n:["Phase 1","Phase 2","Phase 3"],ph:[[657600000000000,280,400,1],[1300000000000000,280,400,1],[1300000000000000,280,400,1]]}, "Hard":{lv:280,sac:550,af:null,n:["Phase 1","Phase 2","Phase 3"],ph:[[2900000000000000,280,550,1],[5900000000000000,280,550,1],[5900000000000000,280,550,1]]}},
+    "Verus Hilla": {"Normal":{lv:250,sac:null,af:820,ph:[[88000000000000,250,null,4]]}, "Hard":{lv:250,sac:null,af:900,ph:[[176000000000000,250,null,4]]}},
+    "Will": {"Easy":{lv:235,sac:null,af:560,n:["Phase 1: Blue Dimension","Phase 1: Purple Dimension","Phase 2","Phase 3"],ph:[[2800000000000,235,null,3],[2800000000000,235,null,3],[4200000000000,235,null,2],[7000000000000,235,null,1]]}, "Normal":{lv:250,sac:null,af:760,n:["Phase 1: Blue Dimension","Phase 1: Purple Dimension","Phase 2","Phase 3"],ph:[[4200000000000,250,null,3],[4200000000000,250,null,3],[6300000000000,250,null,2],[10500000000000,250,null,1]]}, "Hard":{lv:250,sac:null,af:760,n:["Phase 1: Blue Dimension","Phase 1: Purple Dimension","Phase 2","Phase 3"],ph:[[21000000000000,250,null,3],[21000000000000,250,null,3],[31500000000000,250,null,2],[52500000000000,250,null,1]]}}
+};
+
+// Level advantage: final-damage modifier from (character level - monster level).
+// Caps at +5 and bottoms out at -10.
+const LEVEL_FD = {
+    5: 0.20, 4: 0.18, 3: 0.16, 2: 0.14, 1: 0.12, 0: 0.10,
+    '-1': 0.0584, '-2': 0.007, '-3': -0.0328, '-4': -0.082, '-5': -0.12,
+    '-6': -0.15, '-7': -0.17, '-8': -0.20, '-9': -0.22, '-10': -0.25
+};
+
+const BOSS_TIME_LIMIT = 30 * 60;  // hard enrage timer, seconds
+const BURST_CYCLE = 120;          // burst cooldown, seconds
+const BURST_WINDOW = 25;          // seconds of burst uptime
+const BURST_SHARE = 0.60;         // share of damage dealt inside the burst
+
+/**
+ * Final-damage multiplier from level advantage.
+ * @param {number} charLevel
+ * @param {number} bossLevel
+ * @returns {number} multiplier, e.g. 1.20 at +5 or above
+ */
+function levelMultiplier(charLevel, bossLevel) {
+    const diff = Math.max(-10, Math.min(5, charLevel - bossLevel));
+    return 1 + LEVEL_FD[diff];
+}
+
+/**
+ * Damage multiplier from Arcane or Sacred Force.
+ * Arcane scales as a ratio of the requirement and caps at 150%.
+ * Sacred grants +5% per 10 points above the requirement, capping at +25%.
+ * Returns null when the character is under the floor and cannot deal full damage.
+ * @param {number} have - the character's force
+ * @param {number|null} req - the boss's requirement
+ * @param {string} kind - 'sac' or 'af'
+ * @returns {number|null}
+ */
+function forceMultiplier(have, req, kind) {
+    if (!req) return 1;
+    if (have < req) return null;
+    if (kind === 'af') return Math.min(have / req, 1.5);
+    return 1 + 0.05 * Math.min(Math.floor((have - req) / 10), 5);
+}
+
+function getCharLevel(character) { return character.charLevel || 270; }
+function getCharSacred(character) { return character.sacredForce || 0; }
+function getCharArcane(character) { return character.arcaneForce || 0; }
+
+/**
+ * Prices a boss for a character: how much damage they must actually output,
+ * after level and force multipliers, phase by phase.
+ * @param {string} baseName
+ * @param {string} difficulty
+ * @param {object} character
+ * @returns {object|null} { total, phases, blocked } or null if no combat data
+ */
+function effectiveHP(baseName, difficulty, character) {
+    const boss = BOSS_COMBAT[baseName];
+    if (!boss || !boss[difficulty]) return null;
+    const data = boss[difficulty];
+    const lvl = getCharLevel(character);
+    const sacred = getCharSacred(character);
+    const arcane = getCharArcane(character);
+
+    let blocked = null;
+    const phases = data.ph.map((p, i) => {
+        const hp = p[0], bossLvl = p[1], sacReq = p[2], segments = p[3];
+        const lm = levelMultiplier(lvl, bossLvl);
+        let fm = 1;
+        if (sacReq) {
+            fm = forceMultiplier(sacred, sacReq, 'sac');
+            if (fm === null) { blocked = 'Sacred Force ' + sacred + ' < ' + sacReq; fm = 1; }
+        } else if (data.af) {
+            fm = forceMultiplier(arcane, data.af, 'af');
+            if (fm === null) { blocked = 'Arcane Force ' + arcane + ' < ' + data.af; fm = 1; }
+        }
+        return {
+            name: (data.n && data.n[i]) || ('P' + (i + 1)),
+            raw: hp,
+            effective: hp / (lm * fm),
+            levelMult: lm,
+            forceMult: fm,
+            segments: segments,
+            bossLevel: bossLvl
+        };
+    });
+    return {
+        total: phases.reduce((s, p) => s + p.effective, 0),
+        phases: phases,
+        blocked: blocked
+    };
+}
+
+/**
+ * Cumulative damage by elapsed time under a bursty cadence: BURST_SHARE of each
+ * cycle's damage lands in the first BURST_WINDOW seconds, starting at t=0.
+ * @param {number} t - elapsed seconds
+ * @param {number} avgDps - sustained damage per second
+ * @returns {number}
+ */
+function damageByTime(t, avgDps) {
+    const perCycle = avgDps * BURST_CYCLE;
+    const burstDps = perCycle * BURST_SHARE / BURST_WINDOW;
+    const offDps = perCycle * (1 - BURST_SHARE) / (BURST_CYCLE - BURST_WINDOW);
+    const full = Math.floor(t / BURST_CYCLE);
+    const rem = t - full * BURST_CYCLE;
+    let dmg = full * perCycle + burstDps * Math.min(rem, BURST_WINDOW);
+    if (rem > BURST_WINDOW) dmg += offDps * (rem - BURST_WINDOW);
+    return dmg;
+}
+
+/** Inverse of damageByTime: seconds needed to deal dmg. */
+function timeForDamage(dmg, avgDps) {
+    if (avgDps <= 0) return Infinity;
+    let lo = 0, hi = 4 * BOSS_TIME_LIMIT;
+    if (damageByTime(hi, avgDps) < dmg) return Infinity;
+    for (let i = 0; i < 60; i++) {
+        const mid = (lo + hi) / 2;
+        if (damageByTime(mid, avgDps) < dmg) lo = mid; else hi = mid;
+    }
+    return hi;
+}
+
+/**
+ * Full pace read for one boss: per-phase kill deadlines, burst numbers, and
+ * how much slack (in bursts) remains against the 30 minute timer.
+ */
+function bossPace(baseName, difficulty, character, avgDps) {
+    const eff = effectiveHP(baseName, difficulty, character);
+    if (!eff) return null;
+    const perBurst = avgDps * BURST_CYCLE * BURST_SHARE;
+    const available = damageByTime(BOSS_TIME_LIMIT, avgDps);
+    let cum = 0;
+    const phases = eff.phases.map(p => {
+        cum += p.effective;
+        const t = timeForDamage(cum, avgDps);
+        return Object.assign({}, p, {
+            killBy: t,
+            burstNo: isFinite(t) ? Math.floor(t / BURST_CYCLE) + 1 : Infinity,
+            share: p.effective / eff.total
+        });
+    });
+    const clearTime = timeForDamage(eff.total, avgDps);
+    const shortfall = Math.max(0, eff.total - available);
+    return {
+        total: eff.total,
+        blocked: eff.blocked,
+        phases: phases,
+        clearTime: clearTime,
+        clears: clearTime <= BOSS_TIME_LIMIT,
+        spareBursts: (BOSS_TIME_LIMIT - clearTime) / BURST_CYCLE,
+        shortBursts: perBurst > 0 ? shortfall / perBurst : Infinity,
+        damageNeeded: available > 0 ? eff.total / available : Infinity
+    };
+}
+
+/**
+ * Derives a character's sustained DPS from a boss they are known to clear.
+ * A manual override wins when set.
+ */
+function characterDps(character) {
+    if (character.manualDps) return character.manualDps * 1e9;
+    const boss = character.calibBoss, diff = character.calibDifficulty;
+    const mins = parseFloat(character.calibMinutes);
+    if (!boss || !diff || !mins || mins <= 0) return 0;
+    const eff = effectiveHP(boss, diff, character);
+    if (!eff) return 0;
+    return eff.total / (mins * 60);
+}
+
+function fmtHP(v) {
+    if (!isFinite(v)) return '—';
+    if (v >= 1e15) return (v / 1e15).toFixed(2) + 'Q';
+    if (v >= 1e12) return (v / 1e12).toFixed(0) + 'T';
+    if (v >= 1e9) return (v / 1e9).toFixed(0) + 'B';
+    return v.toFixed(0);
+}
+
+function fmtClock(s) {
+    if (!isFinite(s)) return '—';
+    const m = Math.floor(s / 60), sec = Math.round(s % 60);
+    return String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+}
+
+// ============================================================================
+// Progression tab rendering
+// ============================================================================
+
+let progressionSelectedBoss = null;   // "BaseName|Difficulty" for the phase panel
+
+/** Every boss/difficulty pair that has combat data, ordered by crystal value. */
+function allCombatEntries() {
+    const out = [];
+    bossDataFlat.forEach(b => {
+        const parsed = parseBossName(b.name);
+        const diff = parsed.difficulty || 'Normal';
+        if (BOSS_COMBAT[parsed.baseName] && BOSS_COMBAT[parsed.baseName][diff]) {
+            out.push({ baseName: parsed.baseName, difficulty: diff, fullName: b.name, value: b.value });
+        }
+    });
+    return out.sort((a, b) => b.value - a.value);
+}
+
+function updateProgressionField(field, value) {
+    const character = getActiveCharacter();
+    if (!character) return;
+    if (field === 'calibBoss') {
+        const parts = value.split('|');
+        character.calibBoss = parts[0] || null;
+        character.calibDifficulty = parts[1] || null;
+    } else if (field === 'manualDps') {
+        character.manualDps = value === '' ? null : parseFloat(value);
+    } else {
+        character[field] = value === '' ? null : parseInt(value, 10);
+    }
+    saveToLocalStorage();
+    renderProgressionContent();
+}
+
+function selectProgressionBoss(key) {
+    progressionSelectedBoss = key;
+    renderProgressionContent();
+}
+
+function renderProgressionCharacterTabs() {
+    const container = document.getElementById('progressionCharacterTabs');
+    if (!container) return;
+    container.innerHTML = characters.map(char => `
+        <div class="character-tab ${char.id === activeCharacterId ? 'active' : ''}"
+             onclick="switchCharacter(${char.id})">
+            <div class="character-tab-name">${sanitizeInput(char.name)}</div>
+            <div class="character-tab-total">Lv ${getCharLevel(char)}</div>
+        </div>
+    `).join('');
+}
+
+function renderProgressionContent() {
+    const container = document.getElementById('progressionContent');
+    if (!container) return;
+    const character = getActiveCharacter();
+    if (!character) { container.innerHTML = ''; return; }
+
+    const dps = characterDps(character);
+    const entries = allCombatEntries();
+    const calibKey = character.calibBoss ? `${character.calibBoss}|${character.calibDifficulty}` : '';
+
+    const setup = `
+        <div class="prog-setup">
+            <div class="prog-field">
+                <label>Character level</label>
+                <input type="number" min="200" max="300" value="${getCharLevel(character)}"
+                       onchange="updateProgressionField('charLevel', this.value)">
+            </div>
+            <div class="prog-field">
+                <label>Sacred Force</label>
+                <input type="number" min="0" max="1000" value="${character.sacredForce || ''}"
+                       placeholder="e.g. 380"
+                       onchange="updateProgressionField('sacredForce', this.value)">
+            </div>
+            <div class="prog-field">
+                <label>Arcane Force</label>
+                <input type="number" min="0" max="2000" value="${character.arcaneForce || ''}"
+                       placeholder="e.g. 1320"
+                       onchange="updateProgressionField('arcaneForce', this.value)">
+            </div>
+            <div class="prog-field prog-field-wide">
+                <label>Calibrate from a boss you clear</label>
+                <select onchange="updateProgressionField('calibBoss', this.value)">
+                    <option value="">— pick a boss —</option>
+                    ${entries.map(e => {
+                        const k = `${e.baseName}|${e.difficulty}`;
+                        return `<option value="${k}" ${calibKey === k ? 'selected' : ''}>${sanitizeInput(e.fullName)}</option>`;
+                    }).join('')}
+                </select>
+            </div>
+            <div class="prog-field">
+                <label>in (minutes)</label>
+                <input type="number" min="1" max="30" step="0.5" value="${character.calibMinutes || ''}"
+                       placeholder="e.g. 27"
+                       onchange="updateProgressionField('calibMinutes', this.value)">
+            </div>
+            <div class="prog-field">
+                <label>or set DPS directly (B/sec)</label>
+                <input type="number" min="0" step="10" value="${character.manualDps || ''}"
+                       placeholder="e.g. 1000"
+                       onchange="updateProgressionField('manualDps', this.value)">
+            </div>
+        </div>
+    `;
+
+    if (dps <= 0) {
+        container.innerHTML = `
+            <div class="prog-wrap">
+                <h2 class="prog-title">Progression</h2>
+                <p class="prog-sub">Set a level, then calibrate from a boss you already clear — the
+                   model derives your damage from that and prices everything else against it.</p>
+                ${setup}
+                <div class="empty-message">Pick a boss you clear and how long it takes to see the rest.</div>
+            </div>`;
+        return;
+    }
+
+    const perBurst = dps * BURST_CYCLE * BURST_SHARE;
+    const offDps = dps * BURST_CYCLE * (1 - BURST_SHARE) / (BURST_CYCLE - BURST_WINDOW);
+    const burstDps = perBurst / BURST_WINDOW;
+
+    const cadence = `
+        <div class="prog-cadence">
+            <div><span class="prog-k">Sustained</span><span class="prog-v">${(dps / 1e9).toFixed(0)}B/sec</span></div>
+            <div><span class="prog-k">Burst (${BURST_WINDOW}s)</span><span class="prog-v">${(burstDps / 1e9).toFixed(0)}B/sec</span></div>
+            <div><span class="prog-k">Off-burst</span><span class="prog-v">${(offDps / 1e9).toFixed(0)}B/sec</span></div>
+            <div><span class="prog-k">Per burst</span><span class="prog-v">${fmtHP(perBurst)}</span></div>
+            <div><span class="prog-k">Bursts in 30:00</span><span class="prog-v">${Math.floor(BOSS_TIME_LIMIT / BURST_CYCLE)}</span></div>
+        </div>
+    `;
+
+    const rows = entries.map(e => {
+        const pace = bossPace(e.baseName, e.difficulty, character, dps);
+        if (!pace) return '';
+        const key = `${e.baseName}|${e.difficulty}`;
+        let status, cls;
+        if (pace.blocked) {
+            status = pace.blocked; cls = 'prog-blocked';
+        } else if (pace.clears) {
+            status = `${pace.spareBursts.toFixed(1)} bursts spare`;
+            cls = pace.spareBursts < 2 ? 'prog-tight' : 'prog-ok';
+        } else {
+            status = `short ${pace.shortBursts.toFixed(1)} bursts (+${((pace.damageNeeded - 1) * 100).toFixed(0)}% dmg)`;
+            cls = 'prog-fail';
+        }
+        return `
+            <tr class="${cls} ${progressionSelectedBoss === key ? 'prog-selected' : ''}"
+                onclick="selectProgressionBoss('${key}')">
+                <td>${sanitizeInput(e.fullName)}</td>
+                <td class="prog-num">${fmtHP(pace.phases.reduce((s, p) => s + p.raw, 0))}</td>
+                <td class="prog-num">${fmtHP(pace.total)}</td>
+                <td class="prog-num">${fmtClock(pace.clearTime)}</td>
+                <td>${status}</td>
+            </tr>`;
+    }).join('');
+
+    let detail = '';
+    if (progressionSelectedBoss) {
+        const parts = progressionSelectedBoss.split('|');
+        const pace = bossPace(parts[0], parts[1], character, dps);
+        if (pace) {
+            const bursts = [];
+            for (let t = 0; t <= BOSS_TIME_LIMIT; t += BURST_CYCLE) bursts.push(t);
+            detail = `
+                <h3 class="prog-title" style="margin-top:24px;">${sanitizeInput(parts[1] + ' ' + parts[0])} — phase pace</h3>
+                <p class="prog-sub">Kill each phase by the deadline shown. Aim to finish a phase in the
+                   ~20s <em>before</em> a burst so the next burst lands on the fresh phase, not a corpse.</p>
+                <table class="prog-table">
+                    <thead><tr><th>Phase</th><th class="prog-num">Raw</th><th class="prog-num">Effective</th>
+                        <th class="prog-num">Share</th><th class="prog-num">Kill by</th>
+                        <th class="prog-num">Burst #</th><th>Notes</th></tr></thead>
+                    <tbody>
+                    ${pace.phases.map(p => {
+                        const ideal = Math.floor(p.killBy / BURST_CYCLE) * BURST_CYCLE;
+                        const note = [];
+                        if (p.segments > 1) note.push(`${p.segments} segments`);
+                        note.push(`lv${p.bossLevel} · ${(p.levelMult).toFixed(2)}x lvl · ${(p.forceMult).toFixed(2)}x force`);
+                        return `<tr>
+                            <td>${sanitizeInput(p.name)}</td>
+                            <td class="prog-num">${fmtHP(p.raw)}</td>
+                            <td class="prog-num">${fmtHP(p.effective)}</td>
+                            <td class="prog-num">${(p.share * 100).toFixed(1)}%</td>
+                            <td class="prog-num">${fmtClock(p.killBy)}</td>
+                            <td class="prog-num">${isFinite(p.burstNo) ? p.burstNo : '—'}</td>
+                            <td class="prog-note">${note.join(' · ')}</td>
+                        </tr>`;
+                    }).join('')}
+                    </tbody>
+                </table>`;
+        }
+    }
+
+    container.innerHTML = `
+        <div class="prog-wrap">
+            <h2 class="prog-title">Progression</h2>
+            <p class="prog-sub">Effective HP is raw HP divided by your level and force multipliers —
+               the damage you actually have to output. Everything is measured against the 30:00 timer.</p>
+            ${setup}
+            ${cadence}
+            <table class="prog-table">
+                <thead><tr><th>Boss</th><th class="prog-num">Raw HP</th><th class="prog-num">Effective</th>
+                    <th class="prog-num">Clear time</th><th>Margin</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+            <p class="prog-sub" style="margin-top:12px;">Purple rows are under the force floor — those
+               figures assume no force penalty at all, so treat them as a best case. Amber rows clear
+               with under two bursts to spare, where a mistimed phase transition costs you the run.</p>
+            ${detail}
+        </div>`;
+}
+
 // Initialize - load from localStorage or create first character
 function initialize() {
     const loaded = loadFromLocalStorage();
@@ -2356,6 +2813,7 @@ function initialize() {
             if (activeMainTab === 'bhHistory') return tab.textContent.includes('BH History');
             if (activeMainTab === 'sellingStrategy') return tab.textContent.includes('Selling Strategy');
             if (activeMainTab === 'gearTracker') return tab.textContent.includes('Gear Tracker');
+            if (activeMainTab === 'progression') return tab.textContent.includes('Progression');
             return false;
         });
         if (activeTabButton) {
@@ -2380,6 +2838,9 @@ function initialize() {
         } else if (activeMainTab === 'gearTracker') {
             renderGearTrackerCharacterTabs();
             renderGearTrackerContent();
+        } else if (activeMainTab === 'progression') {
+            renderProgressionCharacterTabs();
+            renderProgressionContent();
         }
     }
 }
