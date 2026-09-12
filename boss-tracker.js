@@ -234,11 +234,12 @@ let globalBlackHeartSpares = 0; // Global BH counter shared across all character
 function switchMainTab(tabName) {
     activeMainTab = tabName;
     
-    // Update tab buttons
+    // Update tab buttons. The button is found from tabName rather than the ambient
+    // event so that calling this directly (not from a click) still highlights it.
     document.querySelectorAll('.main-tab').forEach(tab => {
-        tab.classList.remove('active');
+        tab.classList.toggle('active',
+            (tab.getAttribute('onclick') || '').includes("'" + tabName + "'"));
     });
-    event.target.classList.add('active');
     
     // Update tab content
     document.querySelectorAll('.tab-content').forEach(content => {
@@ -250,23 +251,8 @@ function switchMainTab(tabName) {
     saveToLocalStorage();
     
     // Render appropriate content
-    if (tabName === 'bossCrystals') {
-        renderCharacterTabs();
-        renderMainContent();
-    } else if (tabName === 'pitchTracker') {
-        renderPitchCharacterTabs();
-        renderPitchContent();
-    } else if (tabName === 'bhHistory') {
-        renderBHHistory();
-    } else if (tabName === 'sellingStrategy') {
-        renderSellingStrategy();
-    } else if (tabName === 'gearTracker') {
-        renderGearTrackerCharacterTabs();
-        renderGearTrackerContent();
-    } else if (tabName === 'progression') {
-        renderProgressionCharacterTabs();
-        renderProgressionContent();
-    }
+    renderAllCharacterTabs();
+    renderActiveTab();
 }
 
 // LocalStorage functions
@@ -377,6 +363,7 @@ function loadFromLocalStorage() {
 
 function manualSave() {
     saveToLocalStorage();
+    renderActiveTab();
     showSaveStatus();
 }
 
@@ -628,23 +615,43 @@ function deleteCharacter(id) {
     renderAll();
 }
 
-function switchCharacter(id) {
-    activeCharacterId = id;
-    saveToLocalStorage();
-    
-    // Update all tab sets
+/**
+ * Re-renders every per-character tab strip. Each main tab keeps its own strip,
+ * so they all have to move together when the active character changes.
+ */
+function renderAllCharacterTabs() {
     renderCharacterTabs();
     renderPitchCharacterTabs();
     renderGearTrackerCharacterTabs();
+    renderProgressionCharacterTabs();
+}
 
-    // Update content based on active main tab
+/**
+ * Re-renders the body of whichever main tab is active. Every caller that
+ * changes shared state goes through this, so adding a tab means touching one
+ * place rather than four that silently drift apart.
+ */
+function renderActiveTab() {
     if (activeMainTab === 'bossCrystals') {
         renderMainContent();
     } else if (activeMainTab === 'pitchTracker') {
         renderPitchContent();
+    } else if (activeMainTab === 'bhHistory') {
+        renderBHHistory();
+    } else if (activeMainTab === 'sellingStrategy') {
+        renderSellingStrategy();
     } else if (activeMainTab === 'gearTracker') {
         renderGearTrackerContent();
+    } else if (activeMainTab === 'progression') {
+        renderProgressionContent();
     }
+}
+
+function switchCharacter(id) {
+    activeCharacterId = id;
+    saveToLocalStorage();
+    renderAllCharacterTabs();
+    renderActiveTab();
 }
 
 function getActiveCharacter() {
@@ -1068,16 +1075,8 @@ function clearCharacterBosses() {
 }
 
 function renderAll() {
-    renderCharacterTabs();
-    renderPitchCharacterTabs();
-    renderGearTrackerCharacterTabs();
-    if (activeMainTab === 'bossCrystals') {
-        renderMainContent();
-    } else if (activeMainTab === 'pitchTracker') {
-        renderPitchContent();
-    } else if (activeMainTab === 'gearTracker') {
-        renderGearTrackerContent();
-    }
+    renderAllCharacterTabs();
+    renderActiveTab();
 }
 
 function renderPitchCharacterTabs() {
@@ -2650,7 +2649,28 @@ function renderProgressionCharacterTabs() {
     `).join('');
 }
 
+/**
+ * Re-renders the progression panel, restoring keyboard focus and caret position
+ * afterwards. The panel rebuilds its own inputs, so without this an edit would
+ * drop focus mid-typing and a click on another control could be swallowed.
+ */
 function renderProgressionContent() {
+    const focused = document.activeElement;
+    const field = focused && focused.dataset ? focused.dataset.prog : null;
+    const start = field && focused.selectionStart !== undefined ? focused.selectionStart : null;
+    renderProgressionPanel();
+    if (field) {
+        const next = document.querySelector('[data-prog="' + field + '"]');
+        if (next) {
+            next.focus();
+            if (start !== null && next.setSelectionRange) {
+                try { next.setSelectionRange(start, start); } catch (e) { /* number inputs */ }
+            }
+        }
+    }
+}
+
+function renderProgressionPanel() {
     const container = document.getElementById('progressionContent');
     if (!container) return;
     const character = getActiveCharacter();
@@ -2665,23 +2685,23 @@ function renderProgressionContent() {
             <div class="prog-field">
                 <label>Character level</label>
                 <input type="number" min="200" max="300" value="${getCharLevel(character)}"
-                       onchange="updateProgressionField('charLevel', this.value)">
+                       data-prog="charLevel" onchange="updateProgressionField('charLevel', this.value)">
             </div>
             <div class="prog-field">
                 <label>Sacred Force (blank = capped)</label>
                 <input type="number" min="0" max="1000" value="${character.sacredForce || ''}"
                        placeholder="capped"
-                       onchange="updateProgressionField('sacredForce', this.value)">
+                       data-prog="sacredForce" onchange="updateProgressionField('sacredForce', this.value)">
             </div>
             <div class="prog-field">
                 <label>Arcane Force (blank = capped)</label>
                 <input type="number" min="0" max="2000" value="${character.arcaneForce || ''}"
                        placeholder="capped"
-                       onchange="updateProgressionField('arcaneForce', this.value)">
+                       data-prog="arcaneForce" onchange="updateProgressionField('arcaneForce', this.value)">
             </div>
             <div class="prog-field prog-field-wide">
                 <label>Calibrate from a boss you clear</label>
-                <select onchange="updateProgressionField('calibBoss', this.value)">
+                <select data-prog="calibBoss" onchange="updateProgressionField('calibBoss', this.value)">
                     <option value="">— pick a boss —</option>
                     ${entries.map(e => {
                         const k = `${e.baseName}|${e.difficulty}`;
@@ -2693,13 +2713,13 @@ function renderProgressionContent() {
                 <label>in (minutes)</label>
                 <input type="number" min="1" max="30" step="0.5" value="${character.calibMinutes || ''}"
                        placeholder="e.g. 27"
-                       onchange="updateProgressionField('calibMinutes', this.value)">
+                       data-prog="calibMinutes" onchange="updateProgressionField('calibMinutes', this.value)">
             </div>
             <div class="prog-field">
                 <label>or set DPS directly (B/sec)</label>
                 <input type="number" min="0" step="10" value="${character.manualDps || ''}"
                        placeholder="e.g. 1000"
-                       onchange="updateProgressionField('manualDps', this.value)">
+                       data-prog="manualDps" onchange="updateProgressionField('manualDps', this.value)">
             </div>
         </div>
     `;
