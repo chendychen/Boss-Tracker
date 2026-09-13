@@ -2399,12 +2399,11 @@ const BOSS_COMBAT = {
 };
 
 // Level advantage: final-damage modifier from (character level - monster level).
-// Caps at +5 and bottoms out at -10.
-const LEVEL_FD = {
-    5: 0.20, 4: 0.18, 3: 0.16, 2: 0.14, 1: 0.12, 0: 0.10,
-    '-1': 0.0584, '-2': 0.007, '-3': -0.0328, '-4': -0.082, '-5': -0.12,
-    '-6': -0.15, '-7': -0.17, '-8': -0.20, '-9': -0.22, '-10': -0.25
-};
+// Source: StrategyWiki MapleStory/Formulas, "Level Advantage Multiplier".
+// Level or above: +10%, then +2%p per level, capping at +20% from +5.
+// 1-4 below: fixed compound values. 5+ below: -2.5%p per level, truncated,
+// reaching -100% at 40 levels under.
+const LEVEL_FD_NEAR = { '-1': 0.0584, '-2': 0.007, '-3': -0.0328, '-4': -0.082 };
 
 const BOSS_TIME_LIMIT = 30 * 60;  // hard enrage timer, seconds
 const BURST_COOLDOWN = 120;       // nominal burst cooldown, seconds
@@ -2420,29 +2419,44 @@ const BURST_SHARE = 0.60;         // share of damage dealt inside the burst
  * @returns {number} multiplier, e.g. 1.20 at +5 or above
  */
 function levelMultiplier(charLevel, bossLevel) {
-    const diff = Math.max(-10, Math.min(5, charLevel - bossLevel));
-    return 1 + LEVEL_FD[diff];
+    const diff = charLevel - bossLevel;
+    if (diff >= 5) return 1.20;
+    if (diff >= 0) return 1.10 + 0.02 * diff;
+    if (diff >= -4) return 1 + LEVEL_FD_NEAR[diff];
+    return Math.max(0, 1 - Math.floor(2.5 * -diff) / 100);
 }
 
+// Arcane Force final-damage tiers by percentage of the requirement met (rounded down).
+// Source: StrategyWiki MapleStory/Formulas, "Arcane Force Maps".
+const ARCANE_TIERS = [
+    [150, 0.50], [130, 0.30], [110, 0.10], [100, 0], [70, -0.20],
+    [50, -0.30], [30, -0.40], [10, -0.70], [0, -0.90]
+];
+
 /**
- * Damage multiplier from Arcane or Sacred Force.
- * Arcane scales as a ratio of the requirement and caps at 150%.
- * Sacred grants +5% per 10 points above the requirement, capping at +25%.
- * Returns null when the character is under the floor and cannot deal full damage.
- * @param {number} have - the character's force
+ * Damage multiplier from Arcane or Sacred (Authentic) Force.
+ * Arcane is stepped by the share of the requirement met: +10% at 110%, +30% at
+ * 130%, +50% at 150%, with matching penalties below 100%.
+ * Sacred grants +1%p per 2 points over the requirement (rounded down) up to +25%
+ * at +50, and costs -1%p per point under it, down to -95%.
+ * A blank field is treated as capped: characters reach the bonus cap well before
+ * they meet a boss's damage requirement, so force is rarely the constraint.
+ * @param {number|null} have - the character's force, or null for capped
  * @param {number|null} req - the boss's requirement
  * @param {string} kind - 'sac' or 'af'
- * @returns {number|null}
+ * @returns {number}
  */
 function forceMultiplier(have, req, kind) {
     if (!req) return 1;
-    // A blank field means "capped": in practice a character reaches the +50 bonus
-    // cap well before it meets a boss's damage requirement, so force is almost
-    // never the binding constraint. Enter a value only to model being short.
     if (have === null || have === undefined) return kind === 'af' ? 1.5 : 1.25;
-    if (have < req) return null;
-    if (kind === 'af') return Math.min(have / req, 1.5);
-    return 1 + 0.05 * Math.min(Math.floor((have - req) / 10), 5);
+    if (kind === 'af') {
+        const pct = Math.floor(have / req * 100);
+        for (const [floor, fd] of ARCANE_TIERS) if (pct >= floor) return 1 + fd;
+        return 0.1;
+    }
+    const diff = have - req;
+    if (diff >= 0) return 1 + Math.min(Math.floor(diff / 2), 25) / 100;
+    return 1 - Math.min(-diff, 95) / 100;
 }
 
 // Boss defense (PDR, %). PDR is set per difficulty, not per boss. Chosen Seren
@@ -2515,10 +2529,10 @@ function effectiveHP(baseName, difficulty, character) {
         let fm = 1;
         if (sacReq) {
             fm = forceMultiplier(sacred, sacReq, 'sac');
-            if (fm === null) { blocked = 'Sacred Force ' + sacred + ' < ' + sacReq; fm = 1; }
+            if (sacred !== null && sacred < sacReq) blocked = 'SAC ' + sacred + ' < ' + sacReq;
         } else if (data.af) {
             fm = forceMultiplier(arcane, data.af, 'af');
-            if (fm === null) { blocked = 'Arcane Force ' + arcane + ' < ' + data.af; fm = 1; }
+            if (arcane !== null && arcane < data.af) blocked = 'AF ' + arcane + ' < ' + data.af;
         }
         return {
             name: (data.n && data.n[i]) || ('P' + (i + 1)),
@@ -2697,7 +2711,11 @@ function resetProgressionAdjust() {
 
 /** Margin label plus row and text classes for one boss pace result. */
 function paceStatus(pace) {
-    if (pace.blocked) return { status: pace.blocked, cls: 'prog-s-blocked', row: 'prog-blocked' };
+    if (pace.blocked) {
+        const margin = pace.clears ? `${pace.spareBursts.toFixed(1)} bursts spare`
+            : `short ${pace.shortBursts.toFixed(1)} bursts (+${((pace.damageNeeded - 1) * 100).toFixed(0)}% dmg)`;
+        return { status: `${pace.blocked} · ${margin}`, cls: 'prog-s-blocked', row: 'prog-blocked' };
+    }
     if (pace.clears) {
         const tight = pace.spareBursts < 2;
         return { status: `${pace.spareBursts.toFixed(1)} bursts spare`,
@@ -2882,7 +2900,8 @@ function renderProgressionPanel() {
         <div class="prog-adjust">
             <div class="prog-adjust-head">
                 <span class="prog-k">What-if adjustment</span>
-                <span class="prog-adjust-hint">Your damage stays at the result above — this changes how much of it lands.</span>
+                <span class="prog-adjust-hint">Your damage stays at the result above — this changes how much of it lands.
+                    IED here is your total — a new X% source adds X × (1 − current/100), so 20% at 98% adds 0.4%.</span>
             </div>
             <div class="prog-adjust-row">
                 <div class="prog-field">
@@ -3013,8 +3032,8 @@ function renderProgressionPanel() {
                 <tbody>${rows}</tbody>
             </table>
             </div>
-            <p class="prog-sub" style="margin-top:12px;">Purple rows are under the force floor — those
-               figures assume no force penalty at all, so treat them as a best case. Amber rows clear
+            <p class="prog-sub" style="margin-top:12px;">Purple rows are under the force floor, and the
+               penalty for that is already applied to their figures. Amber rows clear
                with under two bursts to spare, where a mistimed phase transition costs you the run.</p>
             ${detail}
         </div>`;

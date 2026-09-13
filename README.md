@@ -54,6 +54,7 @@ No server, build step, or dependencies required. All data is stored locally in y
 
 ### Progression Tab
 - Models effective HP per boss: raw HP divided by level-advantage, Arcane/Sacred Force and boss defense multipliers
+- Level advantage, Arcane Force tiers and Sacred/Authentic Force scaling follow the [StrategyWiki formulas](https://strategywiki.org/wiki/MapleStory/Formulas), including penalties below the force floor
 - Boss defense uses `1 − PDR × (1 − IED)`, with PDR set per difficulty: Chosen Seren onward and Extreme Lotus are 380%, other earlier bosses 300%. IED is a per-character field defaulting to 98%
 - Per-character level, Sacred Force and Arcane Force inputs
 - Derives your sustained damage by calibrating from a boss you already clear (or set DPS directly)
