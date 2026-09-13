@@ -2445,13 +2445,24 @@ function forceMultiplier(have, req, kind) {
     return 1 + 0.05 * Math.min(Math.floor((have - req) / 10), 5);
 }
 
-// Boss defense (PDR, %). Chosen Seren and every boss after it sit at 380;
-// everything earlier, including Extreme Lotus and Black Mage, is 300.
+// Boss defense (PDR, %). PDR is set per difficulty, not per boss. Chosen Seren
+// and every boss after it sit at 380 on all difficulties; earlier bosses are 300,
+// with one exception: Extreme Lotus is a level-285 re-tune and carries 380.
 const BOSS_PDR_DEFAULT = 300;
 const BOSS_PDR = {
     'Chosen Seren': 380, 'Kalos the Guardian': 380, 'First Adversary': 380,
     'Kaling': 380, 'Malefic Star': 380, 'Limbo': 380, 'Baldrix': 380, 'Jupiter': 380
 };
+const BOSS_PDR_OVERRIDES = {
+    'Lotus': { 'Extreme': 380 }
+};
+
+/** PDR for one boss difficulty, applying per-difficulty exceptions. */
+function bossPdr(baseName, difficulty) {
+    const byDiff = BOSS_PDR_OVERRIDES[baseName];
+    if (byDiff && byDiff[difficulty]) return byDiff[difficulty];
+    return BOSS_PDR[baseName] || BOSS_PDR_DEFAULT;
+}
 const DEFAULT_IED = 98;
 
 /**
@@ -2494,7 +2505,7 @@ function effectiveHP(baseName, difficulty, character) {
     const lvl = getCharLevel(character);
     const sacred = getCharSacred(character);
     const arcane = getCharArcane(character);
-    const pdr = BOSS_PDR[baseName] || BOSS_PDR_DEFAULT;
+    const pdr = bossPdr(baseName, difficulty);
     const dm = defenseMultiplier(pdr, getCharIed(character));
 
     let blocked = null;
@@ -2754,8 +2765,8 @@ function renderProgressionPanel() {
                        data-prog="manualDps" onchange="updateProgressionField('manualDps', this.value)">
             </div>
             <div class="prog-field">
-                <label>IED % (blank = 98)</label>
-                <input type="number" min="0" max="100" step="0.1" value="${character.ied === null || character.ied === undefined ? '' : character.ied}"
+                <label>IED %</label>
+                <input type="number" min="0" max="100" step="0.1" value="${getCharIed(character)}"
                        placeholder="98"
                        data-prog="ied" onchange="updateProgressionField('ied', this.value)">
             </div>
