@@ -290,7 +290,8 @@ function serializeCharacter(char) {
         calibBoss: char.calibBoss || null,
         calibDifficulty: char.calibDifficulty || null,
         calibMinutes: char.calibMinutes || null,
-        manualDps: char.manualDps || null
+        manualDps: char.manualDps || null,
+        ied: (char.ied === null || char.ied === undefined) ? null : char.ied
     };
 }
 
@@ -327,7 +328,8 @@ function deserializeCharacter(char) {
         calibBoss: char.calibBoss || null,
         calibDifficulty: char.calibDifficulty || null,
         calibMinutes: char.calibMinutes || null,
-        manualDps: char.manualDps || null
+        manualDps: char.manualDps || null,
+        ied: (char.ied === null || char.ied === undefined) ? null : char.ied
     };
 }
 
@@ -492,6 +494,7 @@ function addCharacter() {
         calibDifficulty: null,
         calibMinutes: null,
         manualDps: null,         // B/sec override, wins over calibration
+        ied: null,               // ignore enemy defense %, blank = 98
     };
     characters.push(newCharacter);
     activeCharacterId = newCharacter.id;
@@ -527,6 +530,7 @@ function copyCurrentCharacter() {
         calibDifficulty: currentChar.calibDifficulty || null,
         calibMinutes: currentChar.calibMinutes || null,
         manualDps: currentChar.manualDps || null,
+        ied: currentChar.ied === undefined ? null : currentChar.ied,
         pitchHistory: [...(currentChar.pitchHistory || [])] // Copy history
     };
     
@@ -2441,6 +2445,30 @@ function forceMultiplier(have, req, kind) {
     return 1 + 0.05 * Math.min(Math.floor((have - req) / 10), 5);
 }
 
+// Boss defense (PDR, %). Chosen Seren and every boss after it sit at 380;
+// everything earlier, including Extreme Lotus and Black Mage, is 300.
+const BOSS_PDR_DEFAULT = 300;
+const BOSS_PDR = {
+    'Chosen Seren': 380, 'Kalos the Guardian': 380, 'First Adversary': 380,
+    'Kaling': 380, 'Malefic Star': 380, 'Limbo': 380, 'Baldrix': 380, 'Jupiter': 380
+};
+const DEFAULT_IED = 98;
+
+/**
+ * Damage multiplier after boss defense: 1 - PDR x (1 - IED), floored at zero.
+ * At 98% IED that is 0.94 against 300% PDR and 0.924 against 380%.
+ * @param {number} pdr - boss defense in percent, e.g. 380
+ * @param {number} ied - ignore enemy defense in percent, e.g. 98
+ * @returns {number}
+ */
+function defenseMultiplier(pdr, ied) {
+    return Math.max(0, 1 - (pdr / 100) * (1 - ied / 100));
+}
+
+function getCharIed(character) {
+    return (character.ied === null || character.ied === undefined) ? DEFAULT_IED : character.ied;
+}
+
 function getCharLevel(character) { return character.charLevel || 270; }
 function getCharSacred(character) {
     return (character.sacredForce === null || character.sacredForce === undefined)
@@ -2466,6 +2494,8 @@ function effectiveHP(baseName, difficulty, character) {
     const lvl = getCharLevel(character);
     const sacred = getCharSacred(character);
     const arcane = getCharArcane(character);
+    const pdr = BOSS_PDR[baseName] || BOSS_PDR_DEFAULT;
+    const dm = defenseMultiplier(pdr, getCharIed(character));
 
     let blocked = null;
     const phases = data.ph.map((p, i) => {
@@ -2482,9 +2512,11 @@ function effectiveHP(baseName, difficulty, character) {
         return {
             name: (data.n && data.n[i]) || ('P' + (i + 1)),
             raw: hp,
-            effective: hp / (lm * fm),
+            effective: dm > 0 ? hp / (lm * fm * dm) : Infinity,
             levelMult: lm,
             forceMult: fm,
+            defenseMult: dm,
+            pdr: pdr,
             segments: segments,
             bossLevel: bossLvl
         };
@@ -2623,8 +2655,8 @@ function updateProgressionField(field, value) {
         const parts = value.split('|');
         character.calibBoss = parts[0] || null;
         character.calibDifficulty = parts[1] || null;
-    } else if (field === 'manualDps') {
-        character.manualDps = value === '' ? null : parseFloat(value);
+    } else if (field === 'manualDps' || field === 'ied') {
+        character[field] = value === '' ? null : parseFloat(value);
     } else {
         character[field] = value === '' ? null : parseInt(value, 10);
     }
@@ -2721,6 +2753,12 @@ function renderProgressionPanel() {
                        placeholder="e.g. 1000"
                        data-prog="manualDps" onchange="updateProgressionField('manualDps', this.value)">
             </div>
+            <div class="prog-field">
+                <label>IED % (blank = 98)</label>
+                <input type="number" min="0" max="100" step="0.1" value="${character.ied === null || character.ied === undefined ? '' : character.ied}"
+                       placeholder="98"
+                       data-prog="ied" onchange="updateProgressionField('ied', this.value)">
+            </div>
         </div>
     `;
 
@@ -2796,7 +2834,7 @@ function renderProgressionPanel() {
                         const ideal = Math.floor(p.killBy / BURST_CYCLE) * BURST_CYCLE;
                         const note = [];
                         if (p.segments > 1) note.push(`${p.segments} segments`);
-                        note.push(`lv${p.bossLevel} · ${(p.levelMult).toFixed(2)}x lvl · ${(p.forceMult).toFixed(2)}x force`);
+                        note.push(`lv${p.bossLevel} · ${(p.levelMult).toFixed(2)}x lvl · ${(p.forceMult).toFixed(2)}x force · PDR ${p.pdr}% ${(p.defenseMult).toFixed(3)}x`);
                         return `<tr>
                             <td>${sanitizeInput(p.name)}</td>
                             <td class="prog-num">${fmtHP(p.raw)}</td>
@@ -2815,7 +2853,7 @@ function renderProgressionPanel() {
     container.innerHTML = `
         <div class="prog-wrap">
             <h2 class="prog-title">Progression</h2>
-            <p class="prog-sub">Effective HP is raw HP divided by your level and force multipliers —
+            <p class="prog-sub">Effective HP is raw HP divided by your level, force and defense multipliers —
                the damage you actually have to output. Everything is measured against the 30:00 timer.</p>
             ${setup}
             ${cadence}

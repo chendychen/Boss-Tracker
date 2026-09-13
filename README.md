@@ -53,7 +53,8 @@ No server, build step, or dependencies required. All data is stored locally in y
   - Displays current cumulative FD from equipped Eternals
 
 ### Progression Tab
-- Models effective HP per boss: raw HP divided by level-advantage and Arcane/Sacred Force multipliers
+- Models effective HP per boss: raw HP divided by level-advantage, Arcane/Sacred Force and boss defense multipliers
+- Boss defense uses `1 − PDR × (1 − IED)`: Chosen Seren onward is 380% PDR, earlier bosses 300%, with IED defaulting to 98% per character
 - Per-character level, Sacred Force and Arcane Force inputs
 - Derives your sustained damage by calibrating from a boss you already clear (or set DPS directly)
 - Phase-by-phase pace against the 30:00 enrage timer, including per-phase monster level (Normal Kalos P1 is level 275 while P2 is 280, so they price differently)
