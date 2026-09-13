@@ -60,6 +60,7 @@ No server, build step, or dependencies required. All data is stored locally in y
 - Phase-by-phase pace against the 30:00 enrage timer, including per-phase monster level (Normal Kalos P1 is level 275 while P2 is 280, so they price differently)
 - Models the 2-minute burst cadence (60% of damage in a ~25s window) and reports slack as **bursts you can waste**
 - Flags each boss as clearing, tight (under 2 bursts spare), short by N bursts, or blocked below the force floor
+- What-if adjustment: nudge level and IED up or down to see adjusted clear time, margin and damage change side by side with current results, including which bosses flip to clearing. Adjustments are per character, held in memory and never saved
 
 ### Multi-Character Management
 - Add, rename, copy, delete, and reorganize characters

@@ -2636,7 +2636,9 @@ function fmtHP(v) {
 
 function fmtClock(s) {
     if (!isFinite(s)) return '—';
-    const m = Math.floor(s / 60), sec = Math.round(s % 60);
+    // Round the whole value first so 23:59.6 carries to 24:00 rather than 23:60.
+    const total = Math.round(s);
+    const m = Math.floor(total / 60), sec = total % 60;
     return String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
 }
 
@@ -2645,6 +2647,65 @@ function fmtClock(s) {
 // ============================================================================
 
 let progressionSelectedBoss = null;   // "BaseName|Difficulty" for the phase panel
+
+// What-if adjustments keyed by character id. Held in memory only: they model a
+// scenario rather than the character's real state, so they are never saved.
+const progressionAdjust = {};
+
+function getProgressionAdjust(character) {
+    return progressionAdjust[character.id] || { level: 0, ied: 0 };
+}
+
+/**
+ * Copy of a character with the what-if deltas applied, clamped to sane bounds.
+ * DPS is still derived from the real character, so only the projection moves.
+ */
+function adjustedCharacter(character, adj) {
+    return Object.assign({}, character, {
+        charLevel: Math.max(200, Math.min(300, getCharLevel(character) + adj.level)),
+        ied: Math.max(0, Math.min(100, Math.round((getCharIed(character) + adj.ied) * 10) / 10))
+    });
+}
+
+function setProgressionAdjust(field, value) {
+    const character = getActiveCharacter();
+    if (!character) return;
+    const adj = Object.assign({ level: 0, ied: 0 }, progressionAdjust[character.id]);
+    adj[field] = field === 'level' ? Math.round(value) : Math.round(value * 10) / 10;
+    if (adj.level === 0 && adj.ied === 0) delete progressionAdjust[character.id];
+    else progressionAdjust[character.id] = adj;
+    renderProgressionContent();
+}
+
+function updateProgressionAdjust(field, value) {
+    const n = parseFloat(value);
+    setProgressionAdjust(field, isFinite(n) ? n : 0);
+}
+
+function nudgeProgressionAdjust(field, step) {
+    const character = getActiveCharacter();
+    if (!character) return;
+    setProgressionAdjust(field, getProgressionAdjust(character)[field] + step);
+}
+
+function resetProgressionAdjust() {
+    const character = getActiveCharacter();
+    if (!character) return;
+    delete progressionAdjust[character.id];
+    renderProgressionContent();
+}
+
+/** Margin label plus row and text classes for one boss pace result. */
+function paceStatus(pace) {
+    if (pace.blocked) return { status: pace.blocked, cls: 'prog-s-blocked', row: 'prog-blocked' };
+    if (pace.clears) {
+        const tight = pace.spareBursts < 2;
+        return { status: `${pace.spareBursts.toFixed(1)} bursts spare`,
+                 cls: tight ? 'prog-s-tight' : 'prog-s-ok', row: tight ? 'prog-tight' : 'prog-ok' };
+    }
+    return { status: `short ${pace.shortBursts.toFixed(1)} bursts (+${((pace.damageNeeded - 1) * 100).toFixed(0)}% dmg)`,
+             cls: 'prog-s-fail', row: 'prog-fail' };
+}
 
 /** Every boss/difficulty pair that has combat data, ordered by crystal value. */
 function allCombatEntries() {
@@ -2800,28 +2861,90 @@ function renderProgressionPanel() {
         </div>
     `;
 
-    const rows = entries.map(e => {
-        const pace = bossPace(e.baseName, e.difficulty, character, dps);
-        if (!pace) return '';
-        const key = `${e.baseName}|${e.difficulty}`;
-        let status, cls;
-        if (pace.blocked) {
-            status = pace.blocked; cls = 'prog-blocked';
-        } else if (pace.clears) {
-            status = `${pace.spareBursts.toFixed(1)} bursts spare`;
-            cls = pace.spareBursts < 2 ? 'prog-tight' : 'prog-ok';
-        } else {
-            status = `short ${pace.shortBursts.toFixed(1)} bursts (+${((pace.damageNeeded - 1) * 100).toFixed(0)}% dmg)`;
-            cls = 'prog-fail';
+    // What-if layer. DPS stays as calibrated; only the projection uses the
+    // adjusted level and IED, so every figure below compares like for like.
+    const adj = getProgressionAdjust(character);
+    const adjusted = adjustedCharacter(character, adj);
+    const active = adj.level !== 0 || adj.ied !== 0;
+
+    const scored = entries.map(e => {
+        const cur = bossPace(e.baseName, e.difficulty, character, dps);
+        if (!cur) return null;
+        const alt = active ? bossPace(e.baseName, e.difficulty, adjusted, dps) : null;
+        return { e: e, cur: cur, alt: alt };
+    }).filter(Boolean);
+
+    const nowClear = active ? scored.filter(r => !r.cur.clears && r.alt.clears && !r.alt.blocked) : [];
+    const lostClear = active ? scored.filter(r => r.cur.clears && !r.alt.clears) : [];
+
+    const signed = (n, digits) => (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toFixed(digits);
+    const adjustPanel = `
+        <div class="prog-adjust">
+            <div class="prog-adjust-head">
+                <span class="prog-k">What-if adjustment</span>
+                <span class="prog-adjust-hint">Your damage stays at the result above — this changes how much of it lands.</span>
+            </div>
+            <div class="prog-adjust-row">
+                <div class="prog-field">
+                    <label>Levels (now ${getCharLevel(character)})</label>
+                    <div class="prog-stepper">
+                        <button type="button" onclick="nudgeProgressionAdjust('level', -5)">−5</button>
+                        <button type="button" onclick="nudgeProgressionAdjust('level', -1)">−1</button>
+                        <input type="number" step="1" value="${adj.level}" data-prog="adjLevel"
+                               onchange="updateProgressionAdjust('level', this.value)">
+                        <button type="button" onclick="nudgeProgressionAdjust('level', 1)">+1</button>
+                        <button type="button" onclick="nudgeProgressionAdjust('level', 5)">+5</button>
+                    </div>
+                    <span class="prog-adjust-result">→ Lv ${getCharLevel(adjusted)}</span>
+                </div>
+                <div class="prog-field">
+                    <label>IED (now ${getCharIed(character)}%)</label>
+                    <div class="prog-stepper">
+                        <button type="button" onclick="nudgeProgressionAdjust('ied', -1)">−1</button>
+                        <button type="button" onclick="nudgeProgressionAdjust('ied', -0.5)">−0.5</button>
+                        <input type="number" step="0.1" value="${adj.ied}" data-prog="adjIed"
+                               onchange="updateProgressionAdjust('ied', this.value)">
+                        <button type="button" onclick="nudgeProgressionAdjust('ied', 0.5)">+0.5</button>
+                        <button type="button" onclick="nudgeProgressionAdjust('ied', 1)">+1</button>
+                    </div>
+                    <span class="prog-adjust-result">→ ${getCharIed(adjusted).toFixed(1)}%</span>
+                </div>
+                <button type="button" class="prog-reset" onclick="resetProgressionAdjust()" ${active ? '' : 'disabled'}>Reset</button>
+            </div>
+            ${active ? `
+                <div class="prog-adjust-summary">
+                    <strong>${signed(adj.level, 0)} levels, ${signed(adj.ied, 1)}% IED</strong>
+                    ${nowClear.length ? ` · <span class="prog-s-ok">now clears: ${nowClear.map(r => sanitizeInput(r.e.fullName)).join(', ')}</span>` : ''}
+                    ${lostClear.length ? ` · <span class="prog-s-fail">no longer clears: ${lostClear.map(r => sanitizeInput(r.e.fullName)).join(', ')}</span>` : ''}
+                    ${!nowClear.length && !lostClear.length ? ' · no boss changes between clearing and failing' : ''}
+                </div>` : ''}
+        </div>
+    `;
+
+    const rows = scored.map(r => {
+        const key = `${r.e.baseName}|${r.e.difficulty}`;
+        const cur = paceStatus(r.cur);
+        let adjCells = '';
+        if (active) {
+            const alt = paceStatus(r.alt);
+            const gain = r.alt.total > 0 ? r.cur.total / r.alt.total - 1 : 0;
+            const flip = !r.cur.clears && r.alt.clears ? ' <span class="prog-flip prog-s-ok">now clears</span>'
+                : r.cur.clears && !r.alt.clears ? ' <span class="prog-flip prog-s-fail">stops clearing</span>' : '';
+            adjCells = `
+                <td class="prog-num prog-adj-col">${fmtClock(r.alt.clearTime)}</td>
+                <td class="prog-adj-col"><span class="prog-status ${alt.cls}">${alt.status}</span>${flip}</td>
+                <td class="prog-num prog-adj-col ${gain > 0.0005 ? 'prog-s-ok' : gain < -0.0005 ? 'prog-s-fail' : ''}">
+                    ${Math.abs(gain) < 0.0005 ? '—' : signed(gain * 100, 1) + '% dmg'}</td>`;
         }
         return `
-            <tr class="${cls} ${progressionSelectedBoss === key ? 'prog-selected' : ''}"
+            <tr class="${cur.row} ${progressionSelectedBoss === key ? 'prog-selected' : ''}"
                 onclick="selectProgressionBoss('${key}')">
-                <td>${sanitizeInput(e.fullName)}</td>
-                <td class="prog-num">${fmtHP(pace.phases.reduce((s, p) => s + p.raw, 0))}</td>
-                <td class="prog-num">${fmtHP(pace.total)}</td>
-                <td class="prog-num">${fmtClock(pace.clearTime)}</td>
-                <td>${status}</td>
+                <td>${sanitizeInput(r.e.fullName)}</td>
+                <td class="prog-num">${fmtHP(r.cur.phases.reduce((s, p) => s + p.raw, 0))}</td>
+                <td class="prog-num">${fmtHP(r.cur.total)}</td>
+                <td class="prog-num">${fmtClock(r.cur.clearTime)}</td>
+                <td><span class="prog-status ${cur.cls}">${cur.status}</span></td>
+                ${adjCells}
             </tr>`;
     }).join('');
 
@@ -2829,23 +2952,32 @@ function renderProgressionPanel() {
     if (progressionSelectedBoss) {
         const parts = progressionSelectedBoss.split('|');
         const pace = bossPace(parts[0], parts[1], character, dps);
+        const altPace = active ? bossPace(parts[0], parts[1], adjusted, dps) : null;
         if (pace) {
-            const bursts = [];
-            for (let t = 0; t <= BOSS_TIME_LIMIT; t += BURST_CYCLE) bursts.push(t);
             detail = `
                 <h3 class="prog-title" style="margin-top:24px;">${sanitizeInput(parts[1] + ' ' + parts[0])} — phase pace</h3>
                 <p class="prog-sub">Kill each phase by the deadline shown. Aim to finish a phase in the
                    ~20s <em>before</em> a burst so the next burst lands on the fresh phase, not a corpse.</p>
+                <div class="prog-table-wrap">
                 <table class="prog-table">
                     <thead><tr><th>Phase</th><th class="prog-num">Raw</th><th class="prog-num">Effective</th>
                         <th class="prog-num">Share</th><th class="prog-num">Kill by</th>
-                        <th class="prog-num">Burst #</th><th>Notes</th></tr></thead>
+                        <th class="prog-num">Burst #</th>
+                        ${active ? '<th class="prog-num prog-adj-col">Kill by (adj)</th><th class="prog-num prog-adj-col">Burst # (adj)</th>' : ''}
+                        <th>Notes</th></tr></thead>
                     <tbody>
-                    ${pace.phases.map(p => {
-                        const ideal = Math.floor(p.killBy / BURST_CYCLE) * BURST_CYCLE;
+                    ${pace.phases.map((p, i) => {
+                        const a = altPace ? altPace.phases[i] : null;
                         const note = [];
                         if (p.segments > 1) note.push(`${p.segments} segments`);
-                        note.push(`lv${p.bossLevel} · ${(p.levelMult).toFixed(2)}x lvl · ${(p.forceMult).toFixed(2)}x force · PDR ${p.pdr}% ${(p.defenseMult).toFixed(3)}x`);
+                        note.push(`lv${p.bossLevel}`);
+                        note.push(a && a.levelMult !== p.levelMult
+                            ? `${p.levelMult.toFixed(2)}→${a.levelMult.toFixed(2)}x lvl`
+                            : `${p.levelMult.toFixed(2)}x lvl`);
+                        note.push(`${p.forceMult.toFixed(2)}x force`);
+                        note.push(a && a.defenseMult !== p.defenseMult
+                            ? `PDR ${p.pdr}% ${p.defenseMult.toFixed(3)}→${a.defenseMult.toFixed(3)}x`
+                            : `PDR ${p.pdr}% ${p.defenseMult.toFixed(3)}x`);
                         return `<tr>
                             <td>${sanitizeInput(p.name)}</td>
                             <td class="prog-num">${fmtHP(p.raw)}</td>
@@ -2853,11 +2985,14 @@ function renderProgressionPanel() {
                             <td class="prog-num">${(p.share * 100).toFixed(1)}%</td>
                             <td class="prog-num">${fmtClock(p.killBy)}</td>
                             <td class="prog-num">${isFinite(p.burstNo) ? p.burstNo : '—'}</td>
+                            ${a ? `<td class="prog-num prog-adj-col">${fmtClock(a.killBy)}</td>
+                                   <td class="prog-num prog-adj-col">${isFinite(a.burstNo) ? a.burstNo : '—'}</td>` : ''}
                             <td class="prog-note">${note.join(' · ')}</td>
                         </tr>`;
                     }).join('')}
                     </tbody>
-                </table>`;
+                </table>
+                </div>`;
         }
     }
 
@@ -2868,11 +3003,16 @@ function renderProgressionPanel() {
                the damage you actually have to output. Everything is measured against the 30:00 timer.</p>
             ${setup}
             ${cadence}
+            ${adjustPanel}
+            <div class="prog-table-wrap">
             <table class="prog-table">
                 <thead><tr><th>Boss</th><th class="prog-num">Raw HP</th><th class="prog-num">Effective</th>
-                    <th class="prog-num">Clear time</th><th>Margin</th></tr></thead>
+                    <th class="prog-num">Clear time</th><th>Margin</th>
+                    ${active ? '<th class="prog-num prog-adj-col">Clear (adj)</th><th class="prog-adj-col">Margin (adj)</th><th class="prog-num prog-adj-col">Change</th>' : ''}
+                </tr></thead>
                 <tbody>${rows}</tbody>
             </table>
+            </div>
             <p class="prog-sub" style="margin-top:12px;">Purple rows are under the force floor — those
                figures assume no force penalty at all, so treat them as a best case. Amber rows clear
                with under two bursts to spare, where a mistimed phase transition costs you the run.</p>
