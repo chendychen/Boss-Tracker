@@ -2629,6 +2629,12 @@ function bossPace(baseName, difficulty, character, avgDps) {
 /**
  * Derives a character's sustained DPS from a boss they are known to clear.
  * A manual override wins when set.
+ *
+ * The clear time is inverted through the same burst model the projections use,
+ * not divided as a plain average. Bursts land at the start of each cycle, so a
+ * short fight banks more than its average share; a plain HP / time average would
+ * credit a 4 minute clear with ~10% more damage than the model then gives back.
+ * damageByTime is linear in DPS, so the inversion is a single division.
  */
 function characterDps(character) {
     if (character.manualDps) return character.manualDps * 1e9;
@@ -2637,7 +2643,7 @@ function characterDps(character) {
     if (!boss || !diff || !mins || mins <= 0) return 0;
     const eff = effectiveHP(boss, diff, character);
     if (!eff) return 0;
-    return eff.total / (mins * 60);
+    return eff.total / damageByTime(mins * 60, 1);
 }
 
 function fmtHP(v) {
