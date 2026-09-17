@@ -2428,6 +2428,10 @@ function levelMultiplier(charLevel, bossLevel) {
 
 // Arcane Force final-damage tiers by percentage of the requirement met (rounded down).
 // Source: StrategyWiki MapleStory/Formulas, "Arcane Force Maps".
+// Maxed Arcane Symbols give 1320; the guild skill adds up to +30 more, and that
+// extra counts for damage in Arcane River.
+const DEFAULT_ARCANE = 1350;
+
 const ARCANE_TIERS = [
     [150, 0.50], [130, 0.30], [110, 0.10], [100, 0], [70, -0.20],
     [50, -0.30], [30, -0.40], [10, -0.70], [0, -0.90]
@@ -2439,8 +2443,10 @@ const ARCANE_TIERS = [
  * 130%, +50% at 150%, with matching penalties below 100%.
  * Sacred grants +1%p per 2 points over the requirement (rounded down) up to +25%
  * at +50, and costs -1%p per point under it, down to -95%.
- * A blank field is treated as capped: characters reach the bonus cap well before
- * they meet a boss's damage requirement, so force is rarely the constraint.
+ * A blank Sacred Force field is treated as capped: characters reach +50 over the
+ * requirement well before they meet a boss's damage requirement.
+ * A blank Arcane Force field is treated as DEFAULT_ARCANE (maxed symbols plus the
+ * guild skill), which is 150% of every requirement except Black Mage's 1320.
  * @param {number|null} have - the character's force, or null for capped
  * @param {number|null} req - the boss's requirement
  * @param {string} kind - 'sac' or 'af'
@@ -2448,7 +2454,10 @@ const ARCANE_TIERS = [
  */
 function forceMultiplier(have, req, kind) {
     if (!req) return 1;
-    if (have === null || have === undefined) return kind === 'af' ? 1.5 : 1.25;
+    if (have === null || have === undefined) {
+        if (kind !== 'af') return 1.25;
+        have = DEFAULT_ARCANE;
+    }
     if (kind === 'af') {
         const pct = Math.floor(have / req * 100);
         for (const [floor, fd] of ARCANE_TIERS) if (pct >= floor) return 1 + fd;
@@ -2822,9 +2831,9 @@ function renderProgressionPanel() {
                        data-prog="sacredForce" onchange="updateProgressionField('sacredForce', this.value)">
             </div>
             <div class="prog-field">
-                <label>Arcane Force (blank = capped)</label>
+                <label>Arcane Force (blank = 1350)</label>
                 <input type="number" min="0" max="2000" value="${character.arcaneForce || ''}"
-                       placeholder="capped"
+                       placeholder="1350"
                        data-prog="arcaneForce" onchange="updateProgressionField('arcaneForce', this.value)">
             </div>
             <div class="prog-field prog-field-wide">
