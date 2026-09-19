@@ -290,6 +290,7 @@ function serializeCharacter(char) {
         calibBoss: char.calibBoss || null,
         calibDifficulty: char.calibDifficulty || null,
         calibMinutes: char.calibMinutes || null,
+        calibParty: char.calibParty || 1,
         manualDps: char.manualDps || null,
         ied: (char.ied === null || char.ied === undefined) ? null : char.ied
     };
@@ -328,6 +329,7 @@ function deserializeCharacter(char) {
         calibBoss: char.calibBoss || null,
         calibDifficulty: char.calibDifficulty || null,
         calibMinutes: char.calibMinutes || null,
+        calibParty: char.calibParty || 1,
         manualDps: char.manualDps || null,
         ied: (char.ied === null || char.ied === undefined) ? null : char.ied
     };
@@ -561,6 +563,7 @@ function addCharacter() {
         calibBoss: null,         // boss used to derive this character's DPS
         calibDifficulty: null,
         calibMinutes: null,
+        calibParty: 1,        // party size of that clear; damage is split evenly
         manualDps: null,         // B/sec override, wins over calibration
         ied: null,               // ignore enemy defense %, blank = 98
     };
@@ -597,6 +600,7 @@ function copyCurrentCharacter() {
         calibBoss: currentChar.calibBoss || null,
         calibDifficulty: currentChar.calibDifficulty || null,
         calibMinutes: currentChar.calibMinutes || null,
+        calibParty: currentChar.calibParty || 1,
         manualDps: currentChar.manualDps || null,
         ied: currentChar.ied === undefined ? null : currentChar.ied,
         pitchHistory: [...(currentChar.pitchHistory || [])] // Copy history
@@ -2707,6 +2711,11 @@ function bossPace(baseName, difficulty, character, avgDps) {
  * Derives a character's sustained DPS from a boss they are known to clear.
  * A manual override wins when set.
  *
+ * A calibration clear done in a party is divided by the party size: the boss's
+ * effective HP was dealt by everyone present, so one member's share is an even
+ * split of it. That assumes the party pulled its weight evenly, which is rough
+ * but far closer than crediting one character with all of it.
+ *
  * The clear time is inverted through the same burst model the projections use,
  * not divided as a plain average. Bursts land at the start of each cycle, so a
  * short fight banks more than its average share; a plain HP / time average would
@@ -2720,7 +2729,8 @@ function characterDps(character) {
     if (!boss || !diff || !mins || mins <= 0) return 0;
     const eff = effectiveHP(boss, diff, character);
     if (!eff) return 0;
-    return eff.total / damageByTime(mins * 60, 1);
+    const party = Math.max(1, parseInt(character.calibParty, 10) || 1);
+    return (eff.total / party) / damageByTime(mins * 60, 1);
 }
 
 function fmtHP(v) {
@@ -2828,6 +2838,8 @@ function updateProgressionField(field, value) {
         const parts = value.split('|');
         character.calibBoss = parts[0] || null;
         character.calibDifficulty = parts[1] || null;
+    } else if (field === 'calibParty') {
+        character.calibParty = Math.max(1, parseInt(value, 10) || 1);
     } else if (field === 'manualDps' || field === 'ied') {
         character[field] = value === '' ? null : parseFloat(value);
     } else {
@@ -2913,6 +2925,11 @@ function renderProgressionPanel() {
                         return `<option value="${k}" ${calibKey === k ? 'selected' : ''}>${sanitizeInput(e.fullName)}</option>`;
                     }).join('')}
                 </select>
+            </div>
+            <div class="prog-field">
+                <label>party size of that clear</label>
+                <input type="number" min="1" max="6" value="${character.calibParty || 1}"
+                       data-prog="calibParty" onchange="updateProgressionField('calibParty', this.value)">
             </div>
             <div class="prog-field">
                 <label>in (minutes)</label>
