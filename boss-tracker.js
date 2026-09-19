@@ -291,6 +291,7 @@ function serializeCharacter(char) {
         calibDifficulty: char.calibDifficulty || null,
         calibMinutes: char.calibMinutes || null,
         calibParty: char.calibParty || 1,
+        calibPercent: char.calibPercent || null,
         manualDps: char.manualDps || null,
         ied: (char.ied === null || char.ied === undefined) ? null : char.ied
     };
@@ -330,6 +331,7 @@ function deserializeCharacter(char) {
         calibDifficulty: char.calibDifficulty || null,
         calibMinutes: char.calibMinutes || null,
         calibParty: char.calibParty || 1,
+        calibPercent: char.calibPercent || null,
         manualDps: char.manualDps || null,
         ied: (char.ied === null || char.ied === undefined) ? null : char.ied
     };
@@ -564,6 +566,7 @@ function addCharacter() {
         calibDifficulty: null,
         calibMinutes: null,
         calibParty: 1,        // party size of that clear; damage is split evenly
+        calibPercent: null,   // GMS Upgrade Tracker clear %, used instead of a time
         manualDps: null,         // B/sec override, wins over calibration
         ied: null,               // ignore enemy defense %, blank = 98
     };
@@ -601,6 +604,7 @@ function copyCurrentCharacter() {
         calibDifficulty: currentChar.calibDifficulty || null,
         calibMinutes: currentChar.calibMinutes || null,
         calibParty: currentChar.calibParty || 1,
+        calibPercent: currentChar.calibPercent || null,
         manualDps: currentChar.manualDps || null,
         ied: currentChar.ied === undefined ? null : currentChar.ied,
         pitchHistory: [...(currentChar.pitchHistory || [])] // Copy history
@@ -2725,6 +2729,15 @@ function bossPace(baseName, difficulty, character, avgDps) {
 function characterDps(character) {
     if (character.manualDps) return character.manualDps * 1e9;
     const boss = character.calibBoss, diff = character.calibDifficulty;
+    // Clear-percent mode: the GMS Upgrade Tracker reports the share of a boss's
+    // requirement a character delivers inside the timer, so 122% means it clears
+    // with room and 54% means it does a little over half. That is the same
+    // quantity as our margin, which makes it a calibration without a stopwatch.
+    const pct = parseFloat(character.calibPercent);
+    if (pct > 0 && boss && diff) {
+        const effPct = effectiveHP(boss, diff, character);
+        if (effPct) return (effPct.total * pct / 100) / damageByTime(BOSS_TIME_LIMIT, 1);
+    }
     const mins = parseFloat(character.calibMinutes);
     if (!boss || !diff || !mins || mins <= 0) return 0;
     const eff = effectiveHP(boss, diff, character);
@@ -2840,7 +2853,7 @@ function updateProgressionField(field, value) {
         character.calibDifficulty = parts[1] || null;
     } else if (field === 'calibParty') {
         character.calibParty = Math.max(1, parseInt(value, 10) || 1);
-    } else if (field === 'manualDps' || field === 'ied') {
+    } else if (field === 'manualDps' || field === 'ied' || field === 'calibPercent') {
         character[field] = value === '' ? null : parseFloat(value);
     } else {
         character[field] = value === '' ? null : parseInt(value, 10);
@@ -2936,6 +2949,12 @@ function renderProgressionPanel() {
                 <input type="number" min="1" max="30" step="0.5" value="${character.calibMinutes || ''}"
                        placeholder="e.g. 27"
                        data-prog="calibMinutes" onchange="updateProgressionField('calibMinutes', this.value)">
+            </div>
+            <div class="prog-field">
+                <label>or site clear % at 30:00</label>
+                <input type="number" min="1" step="1" value="${character.calibPercent || ''}"
+                       placeholder="e.g. 122"
+                       data-prog="calibPercent" onchange="updateProgressionField('calibPercent', this.value)">
             </div>
             <div class="prog-field">
                 <label>or set DPS directly (B/sec)</label>
