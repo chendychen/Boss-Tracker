@@ -333,6 +333,71 @@ function deserializeCharacter(char) {
     };
 }
 
+/**
+ * Loads saves/latest.json when the app is served over http, so the file in the
+ * project folder is the source of truth across browsers and machines.
+ *
+ * A page opened as file:// cannot fetch a sibling file, and that is fine: the
+ * app falls back to localStorage. The file is only adopted when its exportDate
+ * is newer than the one already loaded, so edits made in the browser since the
+ * last import are not thrown away.
+ * @returns {Promise<boolean>} whether the save file replaced local data
+ */
+async function loadSaveFile() {
+    if (!location.protocol.startsWith('http')) return false;
+    let data;
+    try {
+        const response = await fetch('saves/latest.json', { cache: 'no-store' });
+        if (!response.ok) return false;
+        data = await response.json();
+    } catch (e) {
+        return false;   // no server, no file, or not JSON
+    }
+    if (!data || !Array.isArray(data.characters)) return false;
+
+    const seen = localStorage.getItem('bossTrackerSaveFileDate');
+    if (seen && data.exportDate && seen >= data.exportDate) return false;
+
+    characters = data.characters.map(deserializeCharacter);
+    activeCharacterId = data.activeCharacterId
+        || (characters.length ? characters[0].id : null);
+    nextCharacterId = data.nextCharacterId
+        || (Math.max(0, ...characters.map(c => c.id)) + 1);
+    if (data.exportDate) localStorage.setItem('bossTrackerSaveFileDate', data.exportDate);
+    saveToLocalStorage();
+    return true;
+}
+
+/**
+ * Writes the current data back to saves/ through the local server, which keeps
+ * the most recent snapshots. Silently does nothing when the app is opened as a
+ * file or the server is not running.
+ * @returns {Promise<string|null>} the snapshot filename, or null
+ */
+async function writeSaveFile() {
+    if (!location.protocol.startsWith('http')) return null;
+    const payload = {
+        characters: characters.map(serializeCharacter),
+        activeCharacterId: activeCharacterId,
+        nextCharacterId: nextCharacterId,
+        exportDate: new Date().toISOString(),
+        version: '2.0'
+    };
+    try {
+        const response = await fetch('api/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload, null, 2)
+        });
+        if (!response.ok) return null;
+        const result = await response.json();
+        localStorage.setItem('bossTrackerSaveFileDate', payload.exportDate);
+        return result.saved || null;
+    } catch (e) {
+        return null;
+    }
+}
+
 function saveToLocalStorage() {
     const data = {
         characters: characters.map(serializeCharacter),
@@ -367,6 +432,9 @@ function manualSave() {
     saveToLocalStorage();
     renderActiveTab();
     showSaveStatus();
+    writeSaveFile().then(name => {
+        if (name) console.log(`Boss Tracker: wrote saves/${name}`);
+    });
 }
 
 function showSaveStatus() {
@@ -3055,9 +3123,11 @@ function renderProgressionPanel() {
 }
 
 // Initialize - load from localStorage or create first character
-function initialize() {
+async function initialize() {
     const loaded = loadFromLocalStorage();
-    if (!loaded || characters.length === 0) {
+    const fromFile = await loadSaveFile();
+    if (fromFile) console.log('Boss Tracker: loaded saves/latest.json');
+    if ((!loaded && !fromFile) || characters.length === 0) {
         // No saved data or empty, create first character
         addCharacter();
     } else {
