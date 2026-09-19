@@ -292,6 +292,7 @@ function serializeCharacter(char) {
         calibMinutes: char.calibMinutes || null,
         calibParty: char.calibParty || 1,
         calibPercent: char.calibPercent || null,
+        executionFactor: char.executionFactor || null,
         manualDps: char.manualDps || null,
         ied: (char.ied === null || char.ied === undefined) ? null : char.ied
     };
@@ -332,6 +333,7 @@ function deserializeCharacter(char) {
         calibMinutes: char.calibMinutes || null,
         calibParty: char.calibParty || 1,
         calibPercent: char.calibPercent || null,
+        executionFactor: char.executionFactor || null,
         manualDps: char.manualDps || null,
         ied: (char.ied === null || char.ied === undefined) ? null : char.ied
     };
@@ -567,6 +569,7 @@ function addCharacter() {
         calibMinutes: null,
         calibParty: 1,        // party size of that clear; damage is split evenly
         calibPercent: null,   // GMS Upgrade Tracker clear %, used instead of a time
+        executionFactor: null, // real clear / site capacity; blank uses DEFAULT_EXECUTION
         manualDps: null,         // B/sec override, wins over calibration
         ied: null,               // ignore enemy defense %, blank = 98
     };
@@ -605,6 +608,7 @@ function copyCurrentCharacter() {
         calibMinutes: currentChar.calibMinutes || null,
         calibParty: currentChar.calibParty || 1,
         calibPercent: currentChar.calibPercent || null,
+        executionFactor: currentChar.executionFactor || null,
         manualDps: currentChar.manualDps || null,
         ied: currentChar.ied === undefined ? null : currentChar.ied,
         pitchHistory: [...(currentChar.pitchHistory || [])] // Copy history
@@ -2467,7 +2471,7 @@ const BOSS_COMBAT = {
     "Kaling": {"Easy":{lv:275,sac:230,af:null,n:["Phase 1: Perils","","Phase 3: Kaling","Phase 3: Perils"],ph:[[288000000000000,275,230,3],[105000000000000,275,230,1],[150000000000000,275,230,1],[378000000000000,275,230,3]]}, "Normal":{lv:285,sac:330,af:null,n:["Phase 1: Perils","","Phase 3: Kaling","Phase 3: Perils"],ph:[[1200000000000000,285,330,3],[468000000000000,285,330,1],[722000000000000,285,330,1],[1536000000000000,285,330,3]]}, "Hard":{lv:285,sac:350,af:null,n:["Phase 1: Perils","","Phase 3: Kaling","Phase 3: Perils"],ph:[[2718000000000000,285,350,3],[1404000000000000,285,350,1],[2240000000000000.2,285,350,1],[5481000000000000,285,350,3]]}, "Extreme":{lv:285,sac:480,af:null,n:["Phase 1: Perils","","Phase 3: Kaling","Phase 3: Perils"],ph:[[18200000000000000,285,480,3],[6930000000000000,285,480,1],[8662000000000001,285,480,1],[20800000000000000,285,480,3]]}},
     "Kalos the Guardian": {"Easy":{lv:270,sac:200,af:null,ph:[[94500000000000,270,200,1],[262500000000000,270,200,4]]}, "Normal":{lv:280,sac:300,af:null,ph:[[336000000000000,275,250,1],[720000000000000,280,300,4]]}, "Chaos":{lv:285,sac:330,af:null,ph:[[1060000000000000,285,330,1],[4059999999999999.5,285,330,4]]}, "Extreme":{lv:285,sac:440,af:null,ph:[[5970000000000000,285,440,1],[15600000000000000,285,440,4]]}},
     "Limbo": {"Normal":{lv:285,sac:500,af:null,ph:[[1940000000000000,285,500,1],[1940000000000000,285,500,2],[2600000000000000,285,500,1]]}, "Hard":{lv:285,sac:500,af:null,ph:[[3780000000000000,285,500,1],[3780000000000000,285,500,2],[4990000000000000,285,500,1]]}},
-    "Lotus": {"Normal":{lv:210,sac:null,af:null,ph:[[470000000000,210,null,1],[470000000000,210,null,1],[630000000000,210,null,1]]}, "Hard":{lv:210,sac:null,af:null,ph:[[10000000000000,210,null,1],[10000000000000,210,null,1],[13500000000000,210,null,1]]}, "Extreme":{lv:285,sac:null,af:null,ph:[[545000000000000,285,null,1],[545000000000000,285,null,1],[720000000000000,285,null,1]]}},
+    "Lotus": {"warn":{"Extreme":"Phase 1 shield inflates effective HP; how it lines up with mechanics and burst makes runs vary"}, "Normal":{lv:210,sac:null,af:null,ph:[[470000000000,210,null,1],[470000000000,210,null,1],[630000000000,210,null,1]]}, "Hard":{lv:210,sac:null,af:null,ph:[[10000000000000,210,null,1],[10000000000000,210,null,1],[13500000000000,210,null,1]]}, "Extreme":{lv:285,sac:null,af:null,ph:[[545000000000000,285,null,1],[545000000000000,285,null,1],[720000000000000,285,null,1]]}},
     "Lucid": {"Easy":{lv:230,sac:null,af:360,ph:[[6000000000000,230,null,1],[6000000000000,230,null,1]]}, "Normal":{lv:230,sac:null,af:360,ph:[[12000000000000,230,null,1],[12000000000000,230,null,1]]}, "Hard":{lv:230,sac:null,af:360,ph:[[50800000000000,230,null,1],[54000000000000,230,null,1],[12800000000000,230,null,1]]}},
     "Malefic Star": {"Normal":{lv:280,sac:400,af:null,n:["Phase 1","Phase 2","Phase 3"],ph:[[657600000000000,280,400,1],[1300000000000000,280,400,1],[1300000000000000,280,400,1]]}, "Hard":{lv:280,sac:550,af:null,n:["Phase 1","Phase 2","Phase 3"],ph:[[2900000000000000,280,550,1],[5900000000000000,280,550,1],[5900000000000000,280,550,1]]}},
     "Verus Hilla": {"Normal":{lv:250,sac:null,af:820,ph:[[88000000000000,250,null,4]]}, "Hard":{lv:250,sac:null,af:900,ph:[[176000000000000,250,null,4]]}},
@@ -2563,6 +2567,9 @@ function bossPdr(baseName, difficulty) {
     return BOSS_PDR[baseName] || BOSS_PDR_DEFAULT;
 }
 const DEFAULT_IED = 98;
+// Measured across this roster: a site clear % overstates a real clear by 1.24x
+// to 1.43x. Used when a character has no timed clear to measure its own factor.
+const DEFAULT_EXECUTION = 1.3;
 
 /**
  * Damage multiplier after boss defense: 1 - PDR x (1 - IED), floored at zero.
@@ -2685,6 +2692,8 @@ function timeForDamage(dmg, avgDps) {
 function bossPace(baseName, difficulty, character, avgDps) {
     const eff = effectiveHP(baseName, difficulty, character);
     if (!eff) return null;
+    const warn = BOSS_COMBAT[baseName] && BOSS_COMBAT[baseName].warn
+        && BOSS_COMBAT[baseName].warn[difficulty];
     const perBurst = avgDps * BURST_CYCLE * BURST_SHARE;
     const available = damageByTime(BOSS_TIME_LIMIT, avgDps);
     let cum = 0;
@@ -2702,6 +2711,7 @@ function bossPace(baseName, difficulty, character, avgDps) {
     return {
         total: eff.total,
         blocked: eff.blocked,
+        warn: warn || null,
         phases: phases,
         clearTime: clearTime,
         clears: clearTime <= BOSS_TIME_LIMIT,
@@ -2736,7 +2746,15 @@ function characterDps(character) {
     const pct = parseFloat(character.calibPercent);
     if (pct > 0 && boss && diff) {
         const effPct = effectiveHP(boss, diff, character);
-        if (effPct) return (effPct.total * pct / 100) / damageByTime(BOSS_TIME_LIMIT, 1);
+        // The site states damage capacity under an assumed rotation. Real runs
+        // lose time to mechanics, shields, transitions and deaths, so capacity is
+        // divided by an execution factor measured from this character's own timed
+        // clears. A clear time entered directly needs no such correction: the
+        // execution is already inside the number.
+        if (effPct) {
+            const exec = parseFloat(character.executionFactor) || DEFAULT_EXECUTION;
+            return (effPct.total * pct / 100) / damageByTime(BOSS_TIME_LIMIT, 1) / exec;
+        }
     }
     const mins = parseFloat(character.calibMinutes);
     if (!boss || !diff || !mins || mins <= 0) return 0;
@@ -2853,7 +2871,8 @@ function updateProgressionField(field, value) {
         character.calibDifficulty = parts[1] || null;
     } else if (field === 'calibParty') {
         character.calibParty = Math.max(1, parseInt(value, 10) || 1);
-    } else if (field === 'manualDps' || field === 'ied' || field === 'calibPercent') {
+    } else if (field === 'manualDps' || field === 'ied' || field === 'calibPercent'
+            || field === 'executionFactor') {
         character[field] = value === '' ? null : parseFloat(value);
     } else {
         character[field] = value === '' ? null : parseInt(value, 10);
@@ -2955,6 +2974,12 @@ function renderProgressionPanel() {
                 <input type="number" min="1" step="1" value="${character.calibPercent || ''}"
                        placeholder="e.g. 122"
                        data-prog="calibPercent" onchange="updateProgressionField('calibPercent', this.value)">
+            </div>
+            <div class="prog-field">
+                <label>execution factor (site % only)</label>
+                <input type="number" min="1" max="3" step="0.01" value="${character.executionFactor || ''}"
+                       placeholder="${DEFAULT_EXECUTION}"
+                       data-prog="executionFactor" onchange="updateProgressionField('executionFactor', this.value)">
             </div>
             <div class="prog-field">
                 <label>or set DPS directly (B/sec)</label>
@@ -3081,7 +3106,7 @@ function renderProgressionPanel() {
                 <td class="prog-num">${fmtHP(r.cur.phases.reduce((s, p) => s + p.raw, 0))}</td>
                 <td class="prog-num">${fmtHP(r.cur.total)}</td>
                 <td class="prog-num">${fmtClock(r.cur.clearTime)}</td>
-                <td><span class="prog-status ${cur.cls}">${cur.status}</span></td>
+                <td><span class="prog-status ${cur.cls}">${cur.status}</span>${r.cur.warn ? ' <span class="prog-flip prog-s-tight" title="' + sanitizeInput(r.cur.warn) + '">variable</span>' : ''}</td>
                 ${adjCells}
             </tr>`;
     }).join('');
@@ -3096,6 +3121,8 @@ function renderProgressionPanel() {
                 <h3 class="prog-title" style="margin-top:24px;">${sanitizeInput(parts[1] + ' ' + parts[0])} — phase pace</h3>
                 <p class="prog-sub">Kill each phase by the deadline shown. Aim to finish a phase in the
                    ~20s <em>before</em> a burst so the next burst lands on the fresh phase, not a corpse.</p>
+                ${pace.warn ? `<p class="prog-sub prog-s-tight">⚠ ${sanitizeInput(pace.warn)} — treat this margin as
+                   noisier than the others and leave more than the usual buffer.</p>` : ''}
                 <div class="prog-table-wrap">
                 <table class="prog-table">
                     <thead><tr><th>Phase</th><th class="prog-num">Raw</th><th class="prog-num">Effective</th>
