@@ -16,6 +16,40 @@ let upgradeLocalBuilds = null;
 let upgradeTypeFilter = 'all';       // all | starforce | cube | flame
 const UPGRADE_PLAN_ROWS = 25;
 
+// Which Upgrades sections are open. A per-browser convenience, so it lives in
+// localStorage and the page works the same without it.
+const UPGRADE_SECTIONS_KEY = 'bossTrackerUpgradeSections';
+const upgradeSections = (() => {
+    try { return JSON.parse(localStorage.getItem(UPGRADE_SECTIONS_KEY)) || {}; } catch (e) { return {}; }
+})();
+
+function upgradeSectionOpen(name, fallback = true) {
+    return typeof upgradeSections[name] === 'boolean' ? upgradeSections[name] : fallback;
+}
+
+function rememberUpgradeSection(name, open) {
+    upgradeSections[name] = !!open;
+    try { localStorage.setItem(UPGRADE_SECTIONS_KEY, JSON.stringify(upgradeSections)); } catch (e) { /* private mode */ }
+}
+
+function toggleUpgradeSection(name) {
+    rememberUpgradeSection(name, !upgradeSectionOpen(name));
+    renderUpgradesContent();
+}
+
+/**
+ * <details> fires "toggle" when rendered open too, so only a change from what
+ * was rendered counts as the user's choice.
+ */
+function onUpgradeDetailsToggle(name, open, rendered) {
+    if (open !== rendered) rememberUpgradeSection(name, open);
+}
+
+function upgradeSectionToggle(name, title, open) {
+    return `<button class="upg-toggle" onclick="toggleUpgradeSection('${name}')" aria-expanded="${open}">
+        <span class="upg-caret">${open ? '▾' : '▸'}</span>${title}</button>`;
+}
+
 /** Stat sheet fields, labelled with the class's own stats when it is known. */
 function upgradeStatFields(className) {
     const cs = UpgradeEngine.CLASS_STATS[className];
@@ -441,12 +475,21 @@ function renderUpgradeSettings() {
             ${label}
         </label>`;
     return `
-        <details class="upg-card">
+        <details class="upg-card" ${upgradeSectionOpen('pricing', false) ? 'open' : ''}
+                 ontoggle="onUpgradeDetailsToggle('pricing', this.open, ${upgradeSectionOpen('pricing', false)})">
             <summary>Pricing and events</summary>
             <div class="prog-setup">
                 ${num('glowingCube', 'Glowing Cube price', `default ${fmtMeso(D.glowingCube)}`)}
                 ${num('brightCube', 'Bright Cube price', `default ${fmtMeso(D.brightCube)}`)}
                 ${num('flameReset', 'Flame reset price', `default ${fmtMeso(D.flameReset)}`)}
+                <div class="prog-field">
+                    <label>IED lines in cube targets</label>
+                    <select onchange="setUpgradeSetting('iedWeight', this.value)">
+                        ${[[0, 'Ignore (default)'], [0.25, 'Quarter value'], [0.5, 'Half value'], [1, 'Full value']]
+                            .map(([v, l]) => `<option value="${v}" ${+s.iedWeight === v ? 'selected' : ''}>${l}</option>`).join('')}
+                    </select>
+                    <span class="upg-hint">IED stacks with sharply diminishing returns</span>
+                </div>
                 <div class="prog-field">
                     <label>Boss PDR for valuing IED</label>
                     <select onchange="setUpgradeSetting('pdr', this.value)">
@@ -470,8 +513,11 @@ function renderUpgradeSettings() {
 
 function renderUpgradeStats(character, build) {
     const stats = UpgradeEngine.normalizeStats(build.stats);
+    // Open by default only while there is no gear, when the sheet is the next step.
+    const statsOpen = upgradeSectionOpen('stats', !(build.items && Object.keys(build.items).length));
     return `
-        <details class="upg-card" ${build.items && Object.keys(build.items).length ? '' : 'open'}>
+        <details class="upg-card" ${statsOpen ? 'open' : ''}
+                 ontoggle="onUpgradeDetailsToggle('stats', this.open, ${statsOpen})">
             <summary>Stat sheet</summary>
             <p class="upg-note">Values from the in-game stat window with your usual bossing buffs.
                 Only ratios matter, so small errors shift every upgrade alike.</p>
@@ -513,6 +559,30 @@ function setUpgradeUsesCdr(value) {
 function upgradeStatsFor(character, build) {
     return UpgradeEngine.normalizeStats({ ...build.stats,
         cdrValue: characterUpgradeSettings(character).cdrValue });
+}
+
+/** "DEX 102 · STR 42 · All 6%" for a flame's stats that matter to the class. */
+function describeUpgradeFlames(flames, className) {
+    if (!flames) return 'none';
+    const cs = UpgradeEngine.classStats(className);
+    const atk = cs.magic ? 'matt' : 'att';
+    const parts = [
+        [cs.main, UpgradeEngine.STAT_NAMES[cs.main]], [cs.sub, UpgradeEngine.STAT_NAMES[cs.sub]],
+        [atk, atk.toUpperCase()], ['allStatPercent', 'All', '%'],
+        ['bossDamagePercent', 'Boss', '%'], ['damagePercent', 'Dmg', '%'],
+    ].filter(([k]) => +flames[k]).map(([k, label, unit = '']) => `${label} ${flames[k]}${unit}`);
+    return parts.length ? parts.join(' · ') : 'nothing useful';
+}
+
+/** The item's current state for a plan row, so a target reads against it. */
+function describeUpgradeNow(rec, item, className) {
+    if (!item) return '';
+    if (rec.type === 'cube') {
+        const lines = (item.potLines || []).length ? item.potLines.map(describeUpgradeLine).join(' / ') : 'no lines';
+        return `${item.potTier !== 'legendary' ? `${item.potTier} · ` : ''}${lines}${rec.now ? ` · ${rec.now}` : ''}`;
+    }
+    if (rec.type === 'flame') return `${describeUpgradeFlames(item.flames, className)}${rec.now ? ` · ${rec.now}` : ''}`;
+    return '';
 }
 
 function describeUpgradeLine(line) {
@@ -557,10 +627,14 @@ function renderUpgradeInventory(character, build) {
             ${open ? `<tr class="upg-editor-row"><td colspan="9">${renderUpgradeItemEditor(character, build, slot, it)}</td></tr>` : ''}`;
     }).join('');
 
+    const gearOpen = upgradeSectionOpen('gear');
     return `
-        <div class="upg-card">
+        <div class="upg-card ${gearOpen ? '' : 'upg-collapsed'}">
             <div class="upg-plan-head">
-                <h3>Gear</h3>
+                <div class="upg-head-title">
+                    ${upgradeSectionToggle('gear', 'Gear', gearOpen)}
+                    ${gearOpen ? '' : `<span class="upg-sub">${Object.keys(items).length} items</span>`}
+                </div>
                 <div class="upg-filters" title="Whether edits change the stat sheet">
                     <button class="upg-filter ${mode === 'upgrade' ? 'active' : ''}" onclick="setUpgradeEditMode('upgrade')">Edits are upgrades I made</button>
                     <button class="upg-filter ${mode === 'describe' ? 'active' : ''}" onclick="setUpgradeEditMode('describe')">Edits describe gear I wear</button>
@@ -832,9 +906,11 @@ function renderUpgradeRecorder(character, build) {
     } else if (type === 'cube') {
         const unitKey = rec.unitKey || E.targetUnit(slot, cls).key;
         const unit = rec.unit || E.targetUnit(slot, cls).name;
-        const base = E.applyDelta(stats, E.negateDelta(E.linesDelta(item.potLines || [], cls, charLevel)));
+        const weight = characterUpgradeSettings(character).iedWeight;
+        const weigh = l => E.weighIed(l, cls, weight);
+        const base = E.applyDelta(stats, E.negateDelta(E.linesDelta((item.potLines || []).map(weigh), cls, charLevel)));
         const eq = E.lineEquivalent(base, unitKey, cls, charLevel, pdr);
-        const score = draft.potLines.reduce((a, l) => a + eq(E.parsePotentialLine(l, cls)), 0);
+        const score = draft.potLines.reduce((a, l) => a + eq(weigh(l)), 0);
         const met = rec.threshold === undefined || score + 1e-9 >= rec.threshold;
         check = `<span class="${met ? 'upg-met' : 'upg-miss'}">${Math.floor(score)}% ${unit}
             ${rec.threshold !== undefined ? (met ? `· meets ${rec.threshold}%+` : `· short of ${rec.threshold}%+`) : ''}</span>`;
@@ -902,6 +978,21 @@ function renderUpgradePlan(character, build) {
     if (!UpgradeEngine.damageIndex(stats)) {
         return `<div class="upg-card upg-empty">Fill in the stat sheet to rank upgrades.</div>`;
     }
+    if (!upgradeSectionOpen('plan')) {
+        let summary = '';
+        if (hasCachedRecommendations(character, build)) {
+            const { plan } = buildUpgradePlan(character, cachedRecommendations(character, build));
+            const last = plan[plan.length - 1];
+            if (last) summary = `${plan.length} steps · +${last.cumFd.toFixed(1)}% FD for ${fmtMeso(last.cumCost)}`;
+        }
+        return `
+            <div class="upg-card upg-collapsed" id="upgradePlanSlot">
+                <div class="upg-plan-head"><div class="upg-head-title">
+                    ${upgradeSectionToggle('plan', 'Upgrade plan', false)}
+                    ${summary ? `<span class="upg-sub">${summary}</span>` : ''}
+                </div></div>
+            </div>`;
+    }
     if (!hasCachedRecommendations(character, build)) {
         // Ranking takes about a second; draw the editor first and fill this in after.
         setTimeout(() => {
@@ -927,7 +1018,7 @@ function renderUpgradePlan(character, build) {
     return `
         <div class="upg-card" id="upgradePlanSlot">
             <div class="upg-plan-head">
-                <h3>Upgrade plan</h3>
+                <div class="upg-head-title">${upgradeSectionToggle('plan', 'Upgrade plan', true)}</div>
                 <div class="upg-filters">
                     ${filterBtn('all', `All (${counts.starforce + counts.cube + counts.flame})`)}
                     ${filterBtn('starforce', `Star Force (${counts.starforce})`)}
@@ -958,7 +1049,10 @@ function renderUpgradePlan(character, build) {
                         return `
                         <tr class="${open ? 'upg-open' : ''}">
                             <td>${i + 1}</td>
-                            <td>${sanitizeInput(r.label)}${r.detail ? `<div class="upg-sub">${sanitizeInput(r.detail)}</div>` : ''}
+                            <td>${sanitizeInput(r.label)}
+                                ${describeUpgradeNow(r, build.items[r.slot], build.className)
+                                    ? `<div class="upg-now">Now: ${sanitizeInput(describeUpgradeNow(r, build.items[r.slot], build.className))}</div>` : ''}
+                                ${r.detail ? `<div class="upg-sub">${sanitizeInput(r.detail)}</div>` : ''}
                                 ${r.hits && r.hits.length ? `<div class="upg-hits">Most likely hits: ${r.hits.map(h => `<span>${sanitizeInput(h)}</span>`).join('')}</div>` : ''}</td>
                             <td><span class="upg-type upg-type-${r.type}">${typeLabel[r.type] || r.type}</span></td>
                             <td>${fmtMeso(r.cost)}</td>

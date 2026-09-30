@@ -29,6 +29,10 @@
         sfMaxStar: 22,             // target cap for items without their own
         mvpDiscount: 0,            // % off star force up to 16→17★ (Silver 3, Gold 5, Diamond 10)
         cdrValue: 0.7,             // % final damage per second of hat cooldown reduction
+        // How much IED lines count when choosing cube targets: 0 ignores them,
+        // 1 is their full damage value. Stacked IED has sharply diminishing
+        // returns and players do not roll for it, so the default is 0.
+        iedWeight: 0,
     };
 
     /** Parses "2.5B", "500M", "12,000,000" or a number into mesos. */
@@ -579,6 +583,19 @@
 
     const TIER_ORDER = ['rare', 'epic', 'unique', 'legendary'];
 
+    /**
+     * A potential line as cube targeting values it: IED is scaled by
+     * `weight`, and at 0 becomes junk. `shown` keeps the rolled value for
+     * display. Damage bookkeeping (the stat sheet) never goes through this.
+     */
+    function weighIed(line, className, weight) {
+        const parsed = { ...parsePotentialLine(line, className) };
+        if (line && line.w !== undefined) parsed.w = line.w;
+        if (parsed.stat !== 'ied' || weight >= 1) return parsed;
+        if (!(weight > 0)) return { stat: 'other', value: 0, w: parsed.w };
+        return { ...parsed, shown: parsed.value, value: parsed.value * weight };
+    }
+
     /** "DEX 13 / DEX 10 / All 7" in the class's own stat names. */
     function describeLines(lines, className) {
         const cs = classStats(className);
@@ -590,7 +607,7 @@
         const pct = l => (l.stat === 'cooldown' ? 's' : /%$|boss|ied|dmg|critDmg/.test(l.stat) ? '' : ' flat');
         const useful = lines.filter(l => name[l.stat]);
         if (!useful.length) return 'nothing useful';
-        return useful.map(l => `${name[l.stat]} ${l.value}${pct(l)}`).join(' / ');
+        return useful.map(l => `${name[l.stat]} ${l.shown ?? l.value}${pct(l)}`).join(' / ');
     }
 
     /**
@@ -656,9 +673,14 @@
     function cubeOptions(item, ctx) {
         const tables = T();
         if (item.locked || !item.potTier || item.potTier === 'none') return [];
-        const pools = tables.cubePool(item.slot, item.level);
-        if (!pools) return [];
-        const current = item.potLines || [];
+        const rawPools = tables.cubePool(item.slot, item.level);
+        if (!rawPools) return [];
+        const pools = {
+            prime: rawPools.prime.map(l => weighIed(l, ctx.className, ctx.iedWeight)),
+            nonPrime: rawPools.nonPrime.map(l => weighIed(l, ctx.className, ctx.iedWeight)),
+        };
+        const weigh = l => weighIed(l, ctx.className, ctx.iedWeight);
+        const current = (item.potLines || []).map(weigh);
         const unit = targetUnit(item.slot, ctx.className);
         const base = applyDelta(ctx.stats, negateDelta(linesDelta(current, ctx.className, ctx.charLevel)));
         const eq = lineEquivalent(base, unit.key, ctx.className, ctx.charLevel, ctx.pdr);
@@ -688,7 +710,7 @@
                     target: `${th.threshold}%+ ${unit.name}`, now: `${nowPct}% ${unit.name}`,
                     threshold: th.threshold, unit: unit.name, unitKey: unit.key,
                     detail: `${cube.name}s · ${tierCost ? 'tier up, then ' : ''}~${Math.round(th.rolls)} cubes`
-                        + ` · now ${nowPct}%, expect ~${Math.round(th.expect)}%`,
+                        + ` · expect ~${Math.round(th.expect)}%`,
                     hits, cubes: th.rolls, cubeName: cube.name,
                     cost: tierCost + th.rolls * price, fdGain: th.gain,
                 });
@@ -845,7 +867,7 @@
             label: th.threshold <= now + 1 ? `Flame ${item.name} until it beats score ${now}`
                 : `Flame ${item.name} to score ${th.threshold}+`,
             target: `score ${th.threshold}+`, now: `score ${now}`, threshold: th.threshold,
-            detail: `~${Math.round(th.rolls)} meso resets, keeping the better roll · now ${now}, expect ~${Math.round(th.expect)}`,
+            detail: `~${Math.round(th.rolls)} meso resets, keeping the better roll · expect ~${Math.round(th.expect)}`,
             cost: th.rolls * price, fdGain: th.gain,
         }));
         return keepEfficientFrontier(out);
@@ -874,13 +896,15 @@
         ];
         const wse = [
             ['Boss 40%', eqAtt({ stat: 'boss', value: 40 })],
-            ['IED 40%', eqAtt({ stat: 'ied', value: 40 })],
+            ...(+s.iedWeight > 0 ? [[`IED 40% (at ${Math.round(+s.iedWeight * 100)}% weight)`,
+                eqAtt(weighIed({ stat: 'ied', value: 40 }, cls, Math.min(1, +s.iedWeight)))]] : []),
             ['Dmg 13%', eqAtt({ stat: 'dmg', value: 13 })],
             [`${main} 13%`, eqAtt({ stat: 'main%', value: 13 })],
         ];
         return {
             armor: `${main}% targets: ` + armor.map(([n, v]) => `${n} ≈ ${fmt(v)}% ${main}`).join(' · '),
-            wse: `${atk}% targets: ` + wse.map(([n, v]) => `${n} ≈ ${fmt(v)}% ${atk}`).join(' · '),
+            wse: `${atk}% targets: ` + wse.map(([n, v]) => `${n} ≈ ${fmt(v)}% ${atk}`).join(' · ')
+                + (+s.iedWeight > 0 ? '' : ' · IED lines count as junk'),
             flame: cs.main === 'hp'
                 ? `Flame score: HP ÷ 17.5 + ${sub} ÷ 12 + 3 × ${atk} + 10 × (boss + damage) %`
                 : `Flame score: ${main} + ${sub} ÷ 12 + 3 × ${atk} + 10 × all stat % + 10 × (boss + damage) %`,
@@ -899,6 +923,7 @@
         const ctx = {
             stats: normalizeStats({ ...build.stats, cdrValue: +s.cdrValue }), className: build.className,
             charLevel, settings: s, pdr: +s.pdr || DEFAULT_PDR,
+            iedWeight: Math.max(0, Math.min(1, +s.iedWeight || 0)),
         };
         if (!damageIndex(ctx.stats, ctx.pdr)) return [];
         const out = [];
@@ -1222,7 +1247,7 @@
         collapsePool, cubeOutcomes, cubeThresholds,
         sfStep, sfSteps, sfDelta, flameOutcomes, recommend, buildPlan,
         flameScore, itemContribution, restatItem, lineStatsForSlot, lineValuesFor, LINE_LABELS,
-        describeClass, STAT_NAMES, describeLines, targetUnit, lineEquivalent, scoreThresholds, equivalenceLegend,
+        describeClass, STAT_NAMES, describeLines, weighIed, targetUnit, lineEquivalent, scoreThresholds, equivalenceLegend,
         GEAR_CATALOG, STANDARD_SLOTS, newItem,
     });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

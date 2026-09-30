@@ -913,3 +913,23 @@ tr.upg-editor-row > td { background: var(--cds-layer-02); padding: var(--spacing
 .upg-recorder-actions { display: flex; flex-wrap: wrap; gap: var(--spacing-03); align-items: center; margin-top: 6px; }
 .upg-met { color: #42be65; font-weight: 600; }
 .upg-miss { color: #f1c21b; font-weight: 600; }
+.upg-now { font-size: 0.75rem; color: var(--cds-text-secondary); margin-top: 2px; }
+.upg-head-title { display: flex; align-items: baseline; gap: var(--spacing-04); flex-wrap: wrap; }
+.upg-toggle {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--cds-text-primary);
+    font: inherit;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+.upg-toggle:hover { color: var(--cds-interactive); }
+.upg-caret { font-size: 0.85rem; width: 0.9em; display: inline-block; }
+.upg-collapsed > :not(.upg-plan-head) { display: none; }
+.upg-collapsed .upg-plan-head { margin-bottom: 0; }
+.upg-collapsed .upg-filters { display: none; }

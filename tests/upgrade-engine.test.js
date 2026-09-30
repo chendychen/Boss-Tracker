@@ -398,7 +398,9 @@ describe('readable targets', () => {
         assert.ok(cube.hits.length >= 1 && !/INT|LUK/.test(cube.hits.join(' ')));
         const flame = recs.find(r => r.type === 'flame');
         assert.match(flame.label, /score \d+/);
-        assert.match(flame.detail, /now 103, expect ~\d+/);
+        assert.equal(flame.now, 'score 103');
+        assert.match(flame.detail, /expect ~\d+/);
+        assert.match(cube.now, /^\d+% DEX$/);
     });
 });
 
@@ -422,5 +424,36 @@ describe('cooldown hat', () => {
     test('without CDR value, cubing the hat never keeps a CDR line for its own sake', () => {
         const hat = E.recommend(build, { cdrValue: 0 }, { charLevel: 295 }).filter(r => r.type === 'cube');
         for (const r of hat) assert.ok(r.hits.every(h => !/^CDR/.test(h)), r.hits.join(' | '));
+    });
+});
+
+describe('IED in cube targets', () => {
+    const build = {
+        className: 'Bowmaster', stats: { ...SHEET, ied: 95 },
+        items: {
+            weapon: { slot: 'weapon', name: 'Weapon', set: 'Eternal', level: 200, stars: 22, sfKind: 'fixed',
+                potTier: 'legendary', lineCount: 3, replacementCost: 0, flames: {},
+                potLines: [{ stat: 'att%', value: 13 }, { stat: 'att%', value: 10 }, { stat: 'dex%', value: 10 }] },
+        },
+    };
+    const cubes = settings => E.recommend(build, settings, { charLevel: 295 }).filter(r => r.type === 'cube');
+
+    test('by default IED lines are junk to cube targeting', () => {
+        assert.equal(E.DEFAULT_SETTINGS.iedWeight, 0);
+        for (const r of cubes({})) assert.ok(r.hits.every(h => !/IED/.test(h)), r.hits.join(' | '));
+    });
+
+    test('a weight brings IED back at a scaled value, shown at its rolled value', () => {
+        const w = E.weighIed({ stat: 'ied%', value: 40 }, 'Bowmaster', 0.25);
+        assert.equal(w.value, 10);
+        assert.equal(E.describeLines([w], 'Bowmaster'), 'IED 40');
+        assert.equal(E.weighIed({ stat: 'ied%', value: 40 }, 'Bowmaster', 0).stat, 'other');
+        assert.ok(cubes({ iedWeight: 1 }).some(r => r.hits.some(h => /IED/.test(h))));
+    });
+
+    test('the stat sheet still counts real IED', () => {
+        const before = { ...build.items.weapon, potLines: [{ stat: 'ied%', value: 40 }] };
+        const after = { ...build.items.weapon, potLines: [] };
+        assert.ok(E.restatItem(build.stats, before, after, 'Bowmaster', 295).ied < 95);
     });
 });
