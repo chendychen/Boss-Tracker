@@ -35,21 +35,5 @@
     { "name": "Hard Lucid", "price": "504M", "value": 504 },
     { "name": "Hard Lotus", "price": "444.68M", "value": 444.675 },
     { "name": "Hard Damien", "price": "421.88M", "value": 421.875 }
-  ],
-  "pitchedGear": [
-    "Berserked",
-    "Magic Eyepatch",
-    {
-      "name": "Black Heart / Total Control",
-      "subOptions": ["Using TC", "Using BH"]
-    },
-    "Dreamy Belt",
-    "Source of Suffering",
-    "Genesis Badge",
-    "Commanding Force Earring",
-    "Endless Terror",
-    "Cursed Spellbook",
-    "Mitra's Rage"
-  ],
-  "noSparesItems": ["Cursed Spellbook", "Genesis Badge", "Mitra's Rage"]
+  ]
 }

@@ -19,10 +19,7 @@
         
         <div class="main-tabs">
             <button class="main-tab active" onclick="switchMainTab('bossCrystals')">💎 Boss Crystals</button>
-            <button class="main-tab" onclick="switchMainTab('pitchTracker')">💀 Pitched Tracker</button>
-            <button class="main-tab" onclick="switchMainTab('bhHistory')">🖤 BH History</button>
             <button class="main-tab" onclick="switchMainTab('sellingStrategy')">💰 Selling Strategy</button>
-            <button class="main-tab" onclick="switchMainTab('gearTracker')">🛡️ Gear Tracker</button>
             <button class="main-tab" onclick="switchMainTab('progression')">📈 Progression</button>
             <button class="main-tab" onclick="switchMainTab('upgrades')">⚙️ Upgrades</button>
         </div>
@@ -46,32 +43,6 @@
                 </div>
 
                 <div id="mainContent"></div>
-            </div>
-
-            <!-- Pitch Tracker Tab -->
-            <div id="pitchTrackerTab" class="tab-content">
-                <div class="character-section">
-                    <div class="character-controls">
-                        <button class="add-character-btn" onclick="addCharacter()">+ Add Character</button>
-                        <button class="copy-character-btn" onclick="copyCurrentCharacter()">📋 Copy Character</button>
-                        <button class="save-btn" onclick="manualSave()">💾 Save</button>
-                        <span class="save-status" id="saveStatus">✓ Saved!</span>
-                    </div>
-                    
-                    <div class="character-tabs" id="pitchCharacterTabs"></div>
-                </div>
-
-                <div id="pitchContent">
-                    <div style="padding: 40px; text-align: center; color: #6f6f6f;">
-                        <h2 style="color: #c6c6c6; margin-bottom: 16px; font-weight: 300;">💀 Pitched Tracker</h2>
-                        <p>Coming soon! This feature will help you track pitched-related activities.</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- BH History Tab -->
-            <div id="bhHistoryTab" class="tab-content">
-                <div id="bhHistoryContent"></div>
             </div>
 
             <!-- Selling Strategy Tab -->
@@ -105,22 +76,6 @@
                 </div>
 
                 <div id="upgradesContent"></div>
-            </div>
-
-            <!-- Gear Tracker Tab -->
-            <div id="gearTrackerTab" class="tab-content">
-                <div class="character-section">
-                    <div class="character-controls">
-                        <button class="add-character-btn" onclick="addCharacter()">+ Add Character</button>
-                        <button class="copy-character-btn" onclick="copyCurrentCharacter()">📋 Copy Character</button>
-                        <button class="save-btn" onclick="manualSave()">💾 Save</button>
-                        <span class="save-status" id="saveStatus">✓ Saved!</span>
-                    </div>
-
-                    <div class="character-tabs" id="gearTrackerCharacterTabs"></div>
-                </div>
-
-                <div id="gearTrackerContent"></div>
             </div>
         </div>
     </div>
