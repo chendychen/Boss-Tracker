@@ -4,19 +4,21 @@
 // Serves the project folder over http so the app can fetch its save file
 // (a page opened as file:// cannot), and accepts POST /api/save to write the
 // current data back to saves/, keeping the most recent SAVE_LIMIT snapshots.
+// GET /api/builds lists the gear build files dropped into builds/.
 //
 //   node tools/save-server.mjs [port]
 //
 // Nothing here is exposed beyond localhost and there are no dependencies.
 
 import { createServer } from 'node:http';
-import { readFile, writeFile, readdir, unlink, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, readdir, unlink, mkdir, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const SAVE_DIR = join(ROOT, 'saves');
 const LATEST = join(SAVE_DIR, 'latest.json');
+const BUILD_DIR = join(ROOT, 'builds');
 const SAVE_LIMIT = 10;
 const PORT = Number(process.argv[2]) || 8777;
 
@@ -57,6 +59,21 @@ export async function rotateSave(body) {
     return { saved: name, kept: snapshots.length - pruned.length, pruned };
 }
 
+/**
+ * Lists the gear build files dropped into builds/ (exports from the GMS
+ * Upgrade Tracker's Gear page, or MapleScouter presets), newest first.
+ * @returns {Promise<Array<{file: string, modified: string}>>}
+ */
+export async function listBuilds() {
+    await mkdir(BUILD_DIR, { recursive: true });
+    const files = (await readdir(BUILD_DIR)).filter(f => f.toLowerCase().endsWith('.json'));
+    const entries = await Promise.all(files.map(async f => ({
+        file: f,
+        modified: (await stat(join(BUILD_DIR, f))).mtime.toISOString(),
+    })));
+    return entries.sort((a, b) => b.modified.localeCompare(a.modified));
+}
+
 function sendJson(res, status, payload) {
     const body = JSON.stringify(payload);
     res.writeHead(status, {
@@ -84,6 +101,14 @@ const server = createServer(async (req, res) => {
             return sendJson(res, 200, result);
         } catch (err) {
             return sendJson(res, 400, { error: err.message });
+        }
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/builds') {
+        try {
+            return sendJson(res, 200, { builds: await listBuilds() });
+        } catch (err) {
+            return sendJson(res, 500, { error: err.message });
         }
     }
 

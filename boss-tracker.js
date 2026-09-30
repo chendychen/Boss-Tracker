@@ -229,6 +229,7 @@ let activeCharacterId = null;
 let nextCharacterId = 1;
 let activeMainTab = 'bossCrystals';
 let globalBlackHeartSpares = 0; // Global BH counter shared across all characters
+let upgradeSettings = { ...UpgradeEngine.DEFAULT_SETTINGS };  // account-wide upgrade pricing
 
 // Main tab switching function
 function switchMainTab(tabName) {
@@ -294,7 +295,8 @@ function serializeCharacter(char) {
         calibPercent: char.calibPercent || null,
         executionFactor: char.executionFactor || null,
         manualDps: char.manualDps || null,
-        ied: (char.ied === null || char.ied === undefined) ? null : char.ied
+        ied: (char.ied === null || char.ied === undefined) ? null : char.ied,
+        upgradeBuild: char.upgradeBuild || null
     };
 }
 
@@ -335,8 +337,39 @@ function deserializeCharacter(char) {
         calibPercent: char.calibPercent || null,
         executionFactor: char.executionFactor || null,
         manualDps: char.manualDps || null,
-        ied: (char.ied === null || char.ied === undefined) ? null : char.ied
+        ied: (char.ied === null || char.ied === undefined) ? null : char.ied,
+        upgradeBuild: char.upgradeBuild || null
     };
+}
+
+/**
+ * The whole account as one JSON-safe object: what export, the save file and
+ * the import paths all read and write.
+ * @returns {object}
+ */
+function buildSavePayload() {
+    return {
+        characters: characters.map(serializeCharacter),
+        activeCharacterId: activeCharacterId,
+        nextCharacterId: nextCharacterId,
+        upgradeSettings: upgradeSettings,
+        exportDate: new Date().toISOString(),
+        version: '2.0'
+    };
+}
+
+/**
+ * Replaces the in-memory account with a payload from buildSavePayload (or an
+ * older export without the newer fields).
+ * @param {object} data
+ */
+function adoptSavePayload(data) {
+    characters = data.characters.map(deserializeCharacter);
+    activeCharacterId = data.activeCharacterId
+        || (characters.length ? characters[0].id : null);
+    nextCharacterId = data.nextCharacterId
+        || (Math.max(0, ...characters.map(c => c.id)) + 1);
+    if (data.upgradeSettings) upgradeSettings = { ...upgradeSettings, ...data.upgradeSettings };
 }
 
 /**
@@ -364,11 +397,7 @@ async function loadSaveFile() {
     const seen = localStorage.getItem('bossTrackerSaveFileDate');
     if (seen && data.exportDate && seen >= data.exportDate) return false;
 
-    characters = data.characters.map(deserializeCharacter);
-    activeCharacterId = data.activeCharacterId
-        || (characters.length ? characters[0].id : null);
-    nextCharacterId = data.nextCharacterId
-        || (Math.max(0, ...characters.map(c => c.id)) + 1);
+    adoptSavePayload(data);
     if (data.exportDate) localStorage.setItem('bossTrackerSaveFileDate', data.exportDate);
     saveToLocalStorage();
     return true;
@@ -382,13 +411,7 @@ async function loadSaveFile() {
  */
 async function writeSaveFile() {
     if (!location.protocol.startsWith('http')) return null;
-    const payload = {
-        characters: characters.map(serializeCharacter),
-        activeCharacterId: activeCharacterId,
-        nextCharacterId: nextCharacterId,
-        exportDate: new Date().toISOString(),
-        version: '2.0'
-    };
+    const payload = buildSavePayload();
     try {
         const response = await fetch('api/save', {
             method: 'POST',
@@ -410,7 +433,8 @@ function saveToLocalStorage() {
         activeCharacterId: activeCharacterId,
         nextCharacterId: nextCharacterId,
         activeMainTab: activeMainTab,
-        globalBlackHeartSpares: globalBlackHeartSpares
+        globalBlackHeartSpares: globalBlackHeartSpares,
+        upgradeSettings: upgradeSettings
     };
     localStorage.setItem('bossTrackerData', JSON.stringify(data));
 }
@@ -425,6 +449,7 @@ function loadFromLocalStorage() {
             nextCharacterId = data.nextCharacterId;
             activeMainTab = data.activeMainTab || 'bossCrystals';
             globalBlackHeartSpares = data.globalBlackHeartSpares || 0;
+            if (data.upgradeSettings) upgradeSettings = { ...upgradeSettings, ...data.upgradeSettings };
             return true;
         } catch (e) {
             console.error('Error loading saved data:', e);
@@ -452,13 +477,7 @@ function showSaveStatus() {
 }
 
 async function exportData() {
-    const data = {
-        characters: characters.map(serializeCharacter),
-        activeCharacterId: activeCharacterId,
-        nextCharacterId: nextCharacterId,
-        exportDate: new Date().toISOString(),
-        version: '2.0'
-    };
+    const data = buildSavePayload();
 
     const dataStr = JSON.stringify(data, null, 2);
     const suggestedName = `boss-tracker-backup-${new Date().toISOString().split('T')[0]}.json`;
@@ -525,9 +544,7 @@ function importData(event) {
             }
 
             // Load the imported data
-            characters = data.characters.map(deserializeCharacter);
-            activeCharacterId = data.activeCharacterId || (characters.length > 0 ? characters[0].id : null);
-            nextCharacterId = data.nextCharacterId || (Math.max(...characters.map(c => c.id), 0) + 1);
+            adoptSavePayload(data);
 
             // Save to localStorage and render
             saveToLocalStorage();
@@ -708,6 +725,7 @@ function renderAllCharacterTabs() {
     renderPitchCharacterTabs();
     renderGearTrackerCharacterTabs();
     renderProgressionCharacterTabs();
+    renderUpgradesCharacterTabs();
 }
 
 /**
@@ -728,6 +746,8 @@ function renderActiveTab() {
         renderGearTrackerContent();
     } else if (activeMainTab === 'progression') {
         renderProgressionContent();
+    } else if (activeMainTab === 'upgrades') {
+        renderUpgradesContent();
     }
 }
 
@@ -3213,6 +3233,7 @@ async function initialize() {
             if (activeMainTab === 'sellingStrategy') return tab.textContent.includes('Selling Strategy');
             if (activeMainTab === 'gearTracker') return tab.textContent.includes('Gear Tracker');
             if (activeMainTab === 'progression') return tab.textContent.includes('Progression');
+            if (activeMainTab === 'upgrades') return tab.textContent.includes('Upgrades');
             return false;
         });
         if (activeTabButton) {
@@ -3240,6 +3261,9 @@ async function initialize() {
         } else if (activeMainTab === 'progression') {
             renderProgressionCharacterTabs();
             renderProgressionContent();
+        } else if (activeMainTab === 'upgrades') {
+            renderUpgradesCharacterTabs();
+            renderUpgradesContent();
         }
     }
 }

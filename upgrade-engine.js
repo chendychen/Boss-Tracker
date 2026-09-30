@@ -1,0 +1,929 @@
+// Upgrade engine: gear inventory, damage model and upgrade ranking.
+//
+// Pure logic with no DOM access, loaded by the page as a classic script and by
+// the tests through node:vm. Everything hangs off one global so the page's own
+// globals stay untouched.
+//
+// Damage model (StrategyWiki, "MapleStory/Formulas"):
+//   stat value  = 4 x main + sub, where main = base x (1 + stat%) + flat
+//   attack      = ATT x (1 + ATT%)
+//   multipliers = (1 + damage% + boss%) x (1.35 + crit damage%) x (1 - PDR x (1 - IED))
+// An upgrade is valued by how much it moves the product, expressed as final
+// damage percent, which is what the Progression tab consumes.
+
+(function (root) {
+    'use strict';
+
+    const DEFAULT_PDR = 380;   // the bosses worth upgrading for are all 380% PDR
+
+    // Account-wide pricing. Heroic worlds buy cubes and flame resets with mesos.
+    const DEFAULT_SETTINGS = {
+        glowingCube: 12e6,
+        brightCube: 22e6,
+        flameReset: 3e6,
+        pdr: DEFAULT_PDR,
+        shiningStarForce: false,   // 30% off and 30% fewer booms while the event runs
+        safeguard: true,           // Safeguard 15→18★
+        sfProtection: '1144',      // Enhancement Mode at 18, 19, 20, 21★ (the site's default)
+        sfProtectionPitched: '4444',
+        sfMaxStar: 22,             // target cap for items without their own
+        mvpDiscount: 0,            // % off star force up to 16→17★ (Silver 3, Gold 5, Diamond 10)
+        cdrValue: 0.7,             // % final damage per second of hat cooldown reduction
+    };
+
+    /** Parses "2.5B", "500M", "12,000,000" or a number into mesos. */
+    function parseMeso(value, fallback = 0) {
+        if (typeof value === 'number') return Number.isFinite(value) ? value : fallback;
+        const m = String(value || '').replace(/,/g, '').trim().match(/^(\d+(?:\.\d+)?)\s*([kmbt])?$/i);
+        if (!m) return fallback;
+        const scale = { k: 1e3, m: 1e6, b: 1e9, t: 1e12 }[(m[2] || '').toLowerCase()] || 1;
+        return parseFloat(m[1]) * scale;
+    }
+
+    /**
+     * Normalises a stat sheet so every field the model reads is a number.
+     * IED is a percentage (97.2, not 0.972).
+     * @param {object} s
+     * @returns {object}
+     */
+    function normalizeStats(s = {}) {
+        const n = v => (Number.isFinite(+v) ? +v : 0);
+        return {
+            mainBase: n(s.mainBase), mainPct: n(s.mainPct), mainFlat: n(s.mainFlat),
+            subBase: n(s.subBase), subPct: n(s.subPct), subFlat: n(s.subFlat),
+            att: n(s.att), attPct: n(s.attPct),
+            dmg: n(s.dmg), boss: n(s.boss),
+            critDmg: n(s.critDmg), ied: n(s.ied), fd: n(s.fd),
+            cdr: n(s.cdr),
+            // Final damage per second of skill cooldown reduction. Cooldown has
+            // no place in the damage formula, so it is valued as the extra
+            // skill uptime it buys: 0.7% per second is the common estimate.
+            cdrValue: s.cdrValue === undefined ? 0.7 : n(s.cdrValue),
+            model: s.model === 'hp' ? 'hp' : 'normal',
+        };
+    }
+
+    /**
+     * Relative damage of a stat sheet against a boss with the given PDR.
+     * Only ratios of this number are meaningful.
+     */
+    function damageIndex(stats, pdr = DEFAULT_PDR) {
+        const s = normalizeStats(stats);
+        const main = s.mainBase * (1 + s.mainPct / 100) + s.mainFlat;
+        const sub = s.subBase * (1 + s.subPct / 100) + s.subFlat;
+        // Demon Avenger converts HP: 1 stat per 3.5 HP, at 80% for HP above its
+        // pure (AP) HP. Pure HP is a small share of a bossing DA's total, so all
+        // of it is taken at the 80% rate; only ratios matter here.
+        const statValue = s.model === 'hp' ? 0.8 * main / 3.5 + sub : 4 * main + sub;
+        const attack = s.att * (1 + s.attPct / 100);
+        const dmgMult = 1 + (s.dmg + s.boss) / 100;
+        const critMult = 1.35 + s.critDmg / 100;
+        const defMult = Math.max(0, 1 - (pdr / 100) * (1 - s.ied / 100));
+        const fdMult = 1 + s.fd / 100;
+        const cdrMult = 1 + (s.cdr * s.cdrValue) / 100;
+        return statValue * attack * dmgMult * critMult * defMult * fdMult * cdrMult;
+    }
+
+    const asList = v => (Array.isArray(v) ? v : v ? [v] : []);
+
+    /**
+     * Applies a stat change to a sheet. Every field adds except IED, which is a
+     * list of signed lines: +40 stacks a 40% source multiplicatively and -30
+     * removes a 30% source, so swapping one line for another is [+40, -30].
+     * @param {object} stats
+     * @param {object} delta - same fields as the sheet, ied as number or list
+     * @returns {object} a new sheet
+     */
+    function applyDelta(stats, delta) {
+        const out = normalizeStats(stats);
+        for (const [k, v] of Object.entries(delta || {})) {
+            if (k === 'ied') {
+                let remaining = 1 - out.ied / 100;
+                for (const line of asList(v)) {
+                    const f = 1 - Math.abs(line) / 100;
+                    remaining = line > 0 ? remaining * f : remaining / f;
+                }
+                out.ied = 100 * (1 - remaining);
+            } else if (v && k in out && k !== 'model' && k !== 'cdrValue') {
+                out[k] += v;
+            }
+        }
+        return out;
+    }
+
+    /** Final damage percent gained by applying delta to stats. */
+    function fdGain(stats, delta, pdr = DEFAULT_PDR) {
+        const before = damageIndex(stats, pdr);
+        if (!before) return 0;
+        return (damageIndex(applyDelta(stats, delta), pdr) / before - 1) * 100;
+    }
+
+    /** Adds deltas together; IED lines are concatenated so they stack. */
+    function sumDeltas(...deltas) {
+        const out = {};
+        for (const d of deltas) {
+            for (const [k, v] of Object.entries(d || {})) {
+                if (k === 'ied') out.ied = [...asList(out.ied), ...asList(v)];
+                else if (v) out[k] = (out[k] || 0) + v;
+            }
+        }
+        return out;
+    }
+
+    /** The delta that undoes d. */
+    function negateDelta(d) {
+        const out = {};
+        for (const [k, v] of Object.entries(d || {})) {
+            if (k === 'ied') out.ied = asList(v).map(x => -x);
+            else if (v) out[k] = -v;
+        }
+        return out;
+    }
+
+    // ── Classes ─────────────────────────────────────────────────────────────
+    // Main and secondary stat, and whether the class attacks with MATT.
+    // Demon Avenger (HP) and Xenon (three stats) are approximated; their stat
+    // lines are valued as if main stat, which is close for potential ranking.
+    const CLASS_STATS = (() => {
+        const t = {};
+        const set = (names, main, sub, magic = false) =>
+            names.forEach(n => { t[n] = { main, sub, magic }; });
+        set(['Hero', 'Paladin', 'Dark Knight', 'Dawn Warrior', 'Mihile', 'Aran', 'Kaiser',
+             'Adele', 'Zero', 'Hayato', 'Ren', 'Erel Light', 'Blaster', 'Thunder Breaker',
+             'Buccaneer', 'Shade', 'Ark', 'Cannoneer', 'Demon Slayer', 'Mo Xuan'], 'str', 'dex');
+        set(['Bowmaster', 'Marksman', 'Pathfinder', 'Wind Archer', 'Wild Hunter', 'Mercedes',
+             'Kain', 'Corsair', 'Mechanic', 'Angelic Buster'], 'dex', 'str');
+        set(['Night Lord', 'Shadower', 'Dual Blade', 'Night Walker', 'Phantom', 'Cadena',
+             'Hoyoung', 'Khali'], 'luk', 'dex');
+        set(['Fire/Poison', 'Ice/Lightning', 'Bishop', 'Luminous', 'Evan', 'Battle Mage',
+             'Blaze Wizard', 'Kinesis', 'Illium', 'Lara', 'Kanna', 'Lynn', 'Sia'], 'int', 'luk', true);
+        set(['Demon Avenger'], 'hp', 'str');
+        set(['Xenon'], 'str', 'dex');
+        return t;
+    })();
+
+    function classStats(className) {
+        return CLASS_STATS[className] || { main: 'str', sub: 'dex', magic: false };
+    }
+
+    // ── Potential lines ─────────────────────────────────────────────────────
+    // A parsed line is { stat, value }. stat is one of:
+    //   main%, sub%, all%, att%, main, sub, all, att, boss, dmg, ied, critDmg,
+    //   critRate, mainPerLevel, cooldown, other
+    const STAT_WORDS = { str: 'STR', dex: 'DEX', int: 'INT', luk: 'LUK', hp: 'MaxHP' };
+
+    /**
+     * Parses a potential line such as "DEX +12%", "Boss Monster Damage: +40%",
+     * "Ignore Enemy DEF +40%" or "DEX +2 per 10 Character Levels", relative to
+     * the class's stats. Unrecognised lines come back as { stat: 'other' }.
+     */
+    function parsePotentialLine(text, className) {
+        if (text && typeof text === 'object') return parseStructuredLine(text, className);
+        const raw = String(text || '').trim();
+        const cs = classStats(className);
+        const m = raw.match(/([+-]?\d+(?:\.\d+)?)\s*(%)?/);
+        const value = m ? Math.abs(parseFloat(m[1])) : 0;
+        const pct = !!(m && m[2]);
+        const t = raw.toLowerCase();
+        const mainWord = STAT_WORDS[cs.main].toLowerCase();
+        const subWord = STAT_WORDS[cs.sub].toLowerCase();
+        const has = w => new RegExp(`(^|[^a-z])${w}([^a-z]|$)`).test(t);
+
+        if (/boss/.test(t)) return { stat: 'boss', value };
+        if (/ignore|ied|defense|def\b/.test(t) && pct) return { stat: 'ied', value };
+        if (/crit(ical)?\s*(damage|dmg)/.test(t)) return { stat: 'critDmg', value };
+        if (/crit(ical)?\s*rate/.test(t)) return { stat: 'critRate', value };
+        if (/cooldown/.test(t)) return { stat: 'cooldown', value };
+        if (/per\s*\d+\s*(character\s*)?level/.test(t)) {
+            const per = parseFloat((t.match(/per\s*(\d+)/) || [])[1]) || 10;
+            if (has(mainWord) || /all stat/.test(t)) return { stat: 'mainPerLevel', value, per };
+            return { stat: 'other', value };
+        }
+        if (/all stat/.test(t)) return { stat: pct ? 'all%' : 'all', value };
+        const attWord = cs.magic ? /magic att|matt/ : /(^|[^c])att(ack)?([^a-z]|$)/;
+        if (attWord.test(t) && !(cs.magic === false && /magic/.test(t))) {
+            return { stat: pct ? 'att%' : 'att', value };
+        }
+        if (/damage/.test(t) && pct) return { stat: 'dmg', value };
+        if (has(mainWord)) return { stat: pct ? 'main%' : 'main', value };
+        if (has(subWord)) return { stat: pct ? 'sub%' : 'sub', value };
+        return { stat: 'other', value };
+    }
+
+    /**
+     * Maps a structured line from an Upgrade Tracker export ({stat: 'dex%',
+     * value: 12}, 'matt%', 'crit_dmg%', 'allstat%', 'boss%', 'cdr', ...) or one
+     * already in the engine's own vocabulary.
+     */
+    const OWN_STATS = new Set(['main%', 'sub%', 'all%', 'att%', 'main', 'sub', 'all', 'att', 'boss',
+        'dmg', 'ied', 'critDmg', 'critRate', 'mainPerLevel', 'cooldown', 'other']);
+    function parseStructuredLine(line, className) {
+        const value = Math.abs(+line.value || 0);
+        const key = String(line.stat || '').toLowerCase();
+        if (OWN_STATS.has(line.stat)) return { ...line, value };
+        const cs = classStats(className);
+        const pct = key.endsWith('%');
+        const base = key.replace(/%$/, '');
+        if (base === 'boss') return { stat: 'boss', value };
+        if (base === 'ied' || base === 'ignore' || base === 'ignore_def') return { stat: 'ied', value };
+        if (base === 'damage' || base === 'dmg') return { stat: 'dmg', value };
+        if (base === 'crit_dmg') return { stat: 'critDmg', value };
+        if (base === 'crit_rate') return { stat: 'critRate', value };
+        if (base === 'cdr') return { stat: 'cooldown', value };
+        if (base === 'allstat') return { stat: pct ? 'all%' : 'all', value };
+        if (base === 'att' || base === 'matt') {
+            return (base === 'matt') === cs.magic ? { stat: pct ? 'att%' : 'att', value } : { stat: 'other', value };
+        }
+        if (base === cs.main) return { stat: pct ? 'main%' : 'main', value };
+        if (base === cs.sub) return { stat: pct ? 'sub%' : 'sub', value };
+        if (/per_?(\d+_?)?level/.test(base) && base.startsWith(cs.main)) {
+            return { stat: 'mainPerLevel', value, per: parseFloat((base.match(/(\d+)/) || [])[1]) || 10 };
+        }
+        return { stat: 'other', value };
+    }
+
+    /** Stat delta granted by a set of potential lines. */
+    function linesDelta(lines, className, charLevel = 280) {
+        const d = {};
+        const add = (k, v) => { d[k] = (d[k] || 0) + v; };
+        const hpMain = classStats(className).main === 'hp';   // all stat excludes HP
+        for (const raw of lines || []) {
+            const l = parsePotentialLine(raw, className);
+            switch (l.stat) {
+                case 'main%': add('mainPct', l.value); break;
+                case 'sub%': add('subPct', l.value); break;
+                case 'all%': if (!hpMain) add('mainPct', l.value); add('subPct', l.value); break;
+                case 'main': add('mainBase', l.value); break;
+                case 'sub': add('subBase', l.value); break;
+                case 'all': if (!hpMain) add('mainBase', l.value); add('subBase', l.value); break;
+                case 'mainPerLevel': add('mainBase', l.value * Math.floor(charLevel / (l.per || 10))); break;
+                case 'att%': add('attPct', l.value); break;
+                case 'att': add('att', l.value); break;
+                case 'boss': add('boss', l.value); break;
+                case 'dmg': add('dmg', l.value); break;
+                case 'critDmg': add('critDmg', l.value); break;
+                case 'cooldown': add('cdr', l.value); break;
+                case 'ied': d.ied = [...asList(d.ied), l.value]; break;
+                default: break;
+            }
+        }
+        return d;
+    }
+
+    /**
+     * Stat delta granted by an item's flames. Flames are {str, dex, int, luk,
+     * hp, att, matt, allStatPercent, bossDamagePercent, damagePercent}.
+     * Flame main stat is base stat (scaled by stat%).
+     */
+    function flameDelta(flames, className) {
+        if (!flames) return {};
+        const cs = classStats(className);
+        const f = k => +flames[k] || 0;
+        return {
+            mainBase: f(cs.main), subBase: f(cs.sub),
+            att: cs.magic ? f('matt') : f('att'),
+            mainPct: cs.main === 'hp' ? 0 : f('allStatPercent'), subPct: f('allStatPercent'),
+            boss: f('bossDamagePercent'), dmg: f('damagePercent'),
+        };
+    }
+
+    // ── Absorbing Markov chains ─────────────────────────────────────────────
+
+    /** Solves A x = b in place by Gaussian elimination with partial pivoting. */
+    function solveLinear(A, b) {
+        const n = b.length;
+        for (let c = 0; c < n; c++) {
+            let p = c;
+            for (let r = c + 1; r < n; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+            [A[c], A[p]] = [A[p], A[c]];
+            [b[c], b[p]] = [b[p], b[c]];
+            for (let r = c + 1; r < n; r++) {
+                const f = A[r][c] / A[c][c];
+                if (!f) continue;
+                for (let k = c; k < n; k++) A[r][k] -= f * A[c][k];
+                b[r] -= f * b[c];
+            }
+        }
+        const x = new Array(n).fill(0);
+        for (let r = n - 1; r >= 0; r--) {
+            let v = b[r];
+            for (let k = r + 1; k < n; k++) v -= A[r][k] * x[k];
+            x[r] = v / A[r][r];
+        }
+        return x;
+    }
+
+    /**
+     * Expected totals to climb from star `from` to `to`.
+     *
+     * step(s) describes one attempt at star s: { cost, success, destroy, drop }
+     * as probabilities (the remainder keeps the star), plus per-attempt extras
+     * the caller wants summed (e.g. booms). A destroyed item comes back at
+     * `recoverStar` after paying `boomCost`. Returns { cost, booms, attempts }.
+     */
+    function climbExpectation(from, to, step, { recoverStar = 12, boomCost = 0 } = {}) {
+        if (to <= from) return { cost: 0, booms: 0, attempts: 0 };
+        const lo = Math.min(from, recoverStar);
+        const states = [];
+        for (let s = lo; s < to; s++) states.push(s);
+        const idx = s => s - lo;
+        const n = states.length;
+        const solveFor = perAttempt => {
+            const A = states.map(() => new Array(n).fill(0));
+            const b = new Array(n).fill(0);
+            states.forEach(s => {
+                const r = idx(s);
+                const st = step(s);
+                const stay = 1 - st.success - st.destroy - (st.drop || 0);
+                A[r][r] += 1 - stay;
+                if (s + 1 < to) A[r][idx(s + 1)] -= st.success;
+                if (st.drop) A[r][idx(Math.max(lo, s - 1))] -= st.drop;
+                if (st.destroy) A[r][idx(recoverStar)] -= st.destroy;
+                b[r] = perAttempt(st);
+            });
+            return solveLinear(A, b)[idx(from)];
+        };
+        return {
+            cost: solveFor(st => st.cost + st.destroy * boomCost),
+            booms: solveFor(st => st.destroy),
+            attempts: solveFor(() => 1),
+        };
+    }
+
+    // ── Cubing ──────────────────────────────────────────────────────────────
+
+    /**
+     * Collapses a line pool to what matters for one class: lines that move the
+     * same stats by the same amount merge, so "LUK +12%" and "Max MP +12%"
+     * become one "nothing" entry for a DEX class. Returns [{line, w}].
+     */
+    function collapsePool(pool, className) {
+        const merged = new Map();
+        for (const entry of pool || []) {
+            const line = parsePotentialLine(entry, className);
+            const useful = !['other', 'critRate'].includes(line.stat);
+            const key = useful ? `${line.stat}:${line.value}` : 'other';
+            const prev = merged.get(key);
+            if (prev) prev.w += entry.w;
+            else merged.set(key, { line: useful ? line : { stat: 'other', value: 0 }, w: entry.w });
+        }
+        const total = [...merged.values()].reduce((a, e) => a + e.w, 0) || 1;
+        return [...merged.values()].map(e => ({ line: e.line, w: e.w / total }));
+    }
+
+    /**
+     * Distribution of final-damage outcomes from one roll of an item's
+     * potential. `pools.prime` and `pools.nonPrime` are line pools ({stat,
+     * value, w}); `primeChance[i]` is the chance line i is prime (line 0 is
+     * always prime at Legendary). `limits` caps how many lines of a stat may
+     * appear together, e.g. { ied: 2, boss: 2 }; outcomes that break a cap are
+     * rerolled, i.e. dropped and the rest renormalised.
+     * Returns outcomes sorted best first: [{ fd, p, lines }].
+     */
+    function cubeOutcomes({ stats, className, charLevel, currentLines, lineCount = 3,
+                            pools, primeChance, limits = {}, pdr = DEFAULT_PDR }) {
+        const prime = collapsePool(pools.prime, className);
+        const nonPrime = collapsePool(pools.nonPrime, className);
+        const perLine = [];
+        for (let i = 0; i < lineCount; i++) {
+            const pc = i === 0 ? 1 : (primeChance[i] ?? primeChance[primeChance.length - 1]);
+            const opts = new Map();
+            const add = (arr, scale) => arr.forEach(e => {
+                const k = `${e.line.stat}:${e.line.value}`;
+                const prev = opts.get(k);
+                if (prev) prev.w += e.w * scale;
+                else opts.set(k, { line: e.line, w: e.w * scale });
+            });
+            add(prime, pc);
+            if (pc < 1) add(nonPrime, 1 - pc);
+            perLine.push([...opts.values()].filter(o => o.w > 0));
+        }
+
+        const without = negateDelta(linesDelta(currentLines || [], className, charLevel));
+        const base = applyDelta(stats, without);
+        const baseIndex = damageIndex(stats, pdr);
+        const byKey = new Map();
+        let kept = 0;
+        const walk = (i, chosen, w) => {
+            if (i === lineCount) {
+                if (Object.keys(limits).length) {
+                    const counts = {};
+                    for (const l of chosen) counts[l.stat] = (counts[l.stat] || 0) + 1;
+                    for (const [stat, max] of Object.entries(limits)) if ((counts[stat] || 0) > max) return;
+                }
+                kept += w;
+                const key = chosen.map(l => `${l.stat}:${l.value}`).sort().join('|');
+                const prev = byKey.get(key);
+                if (prev) { prev.p += w; return; }
+                const after = applyDelta(base, linesDelta(chosen, className, charLevel));
+                byKey.set(key, { fd: (damageIndex(after, pdr) / baseIndex - 1) * 100, p: w, lines: chosen.slice() });
+                return;
+            }
+            for (const o of perLine[i]) {
+                chosen.push(o.line);
+                walk(i + 1, chosen, w * o.w);
+                chosen.pop();
+            }
+        };
+        walk(0, [], 1);
+        const out = [...byKey.values()];
+        out.forEach(o => { o.p /= kept || 1; });
+        return out.sort((a, b) => b.fd - a.fd);
+    }
+
+    /**
+     * For "cube until the result is at least t", the expected rolls and the
+     * expected gain, for each distinct useful threshold. Outcomes must be
+     * sorted best first. Thresholds with no gain over current are skipped.
+     */
+    function cubeThresholds(outcomes, { minGain = 0.01, step = 0.01 } = {}) {
+        // Outcomes closer than `step` % FD are one target: nobody cubes for the
+        // difference, and it keeps the option list short.
+        const res = [];
+        let p = 0, pf = 0;
+        for (let i = 0; i < outcomes.length; i++) {
+            p += outcomes[i].p;
+            pf += outcomes[i].p * outcomes[i].fd;
+            const next = outcomes[i + 1];
+            const bin = Math.floor(outcomes[i].fd / step);
+            if (next && Math.floor(next.fd / step) === bin) continue;
+            const threshold = bin * step;
+            if (threshold < minGain) break;
+            res.push({ threshold, p, rolls: 1 / p, gain: pf / p, at: outcomes[i].lines });
+        }
+        return res;
+    }
+
+    // ── Star Force ──────────────────────────────────────────────────────────
+
+    const T = () => root.UpgradeEngine.TABLES;
+
+    /**
+     * Enhancement Mode level used at current stars 18-21, plus Safeguard at
+     * 15-17, as the site's "SG 1144" shorthand. Pitched and Brilliant items
+     * default to always protected (4444), as a boom there costs a pitched item.
+     */
+    function sfProtection(item, settings) {
+        const always = /pitched|brilliant/i.test(item.set || '');
+        const spec = String(always ? settings.sfProtectionPitched : settings.sfProtection).replace(/\D/g, '');
+        return {
+            safeguard: settings.safeguard !== false,
+            modes: { 18: +spec[0] || 1, 19: +spec[1] || 1, 20: +spec[2] || 1, 21: +spec[3] || 1 },
+        };
+    }
+
+    /** One attempt at star s: { cost, success, destroy } with protection and events. */
+    function sfStep(item, s, settings) {
+        const tables = T();
+        const base = tables.sfBaseCost(item.level, s);
+        const shining = !!settings.shiningStarForce;
+        const discount = (shining ? 0.7 : 1) * (s <= 16 ? 1 - (settings.mvpDiscount || 0) / 100 : 1);
+        const prot = sfProtection(item, settings);
+        let [success, destroy] = tables.SF_RATES[s] || [0, 0];
+        let cost = base * discount;
+        if (s >= 15 && s <= 17 && prot.safeguard) {
+            destroy = 0;
+            cost += 2 * base;                    // the safeguard premium is never discounted
+        } else if (s >= 18 && s <= 21) {
+            const mode = tables.SF_MODES[s][prot.modes[s]] || tables.SF_MODES[s][1];
+            cost = base * mode[0] * discount;
+            success = mode[1];
+            destroy = mode[2];
+        }
+        if (shining && s <= 21) destroy *= 0.7;  // 30% fewer booms below 22
+        return { cost, success: success / 100, destroy: destroy / 100 };
+    }
+
+    /** Stat delta from climbing an item from star a to b. */
+    function sfDelta(item, a, b, className) {
+        const cs = classStats(className);
+        let stat = 0, att = 0;
+        for (let s = a + 1; s <= b; s++) {
+            const g = T().sfStarGain(item.slot, item.level, s);
+            stat += g.stat;
+            att += g.att;
+        }
+        return { mainBase: cs.main === 'hp' ? 0 : stat, subBase: stat, att };
+    }
+
+    /**
+     * Expected mesos, booms and attempts for each single step s -> s+1 up to
+     * `upTo`, including the re-climb after a boom. A boom costs the item's
+     * replacement cost (0 when a trace is restored for free) and returns it to
+     * the star v.264 restores that star to, which is always lower, so steps can
+     * be filled in upward:
+     *   E[s] = (cost + destroy x (boomCost + E[recover(s) -> s])) / success
+     * Climbs then add: E[a -> b] = sum of E[s] for a <= s < b.
+     */
+    function sfSteps(item, upTo, settings) {
+        const tables = T();
+        const lo = Math.min(item.stars, 12);
+        const E = {}, B = {}, A = {};
+        const span = (arr, a, b) => { let t = 0; for (let k = a; k < b; k++) t += arr[k]; return t; };
+        for (let st = lo; st < upTo; st++) {
+            const step = sfStep(item, st, settings);
+            const r = Math.max(lo, tables.sfRecoverStar(st));
+            const back = { e: span(E, r, st), b: span(B, r, st), a: span(A, r, st) };
+            E[st] = (step.cost + step.destroy * ((item.replacementCost || 0) + back.e)) / step.success;
+            B[st] = (step.destroy * (1 + back.b)) / step.success;
+            A[st] = (1 + step.destroy * back.a) / step.success;
+        }
+        return (a, b) => ({ cost: span(E, a, b), booms: span(B, a, b), attempts: span(A, a, b) });
+    }
+
+    function sfCap(item, settings) {
+        const levelCap = T().sfMaxStars(item.level);
+        const cap = item.starCap > 0 ? item.starCap : (settings.sfMaxStar || 22);
+        return Math.min(levelCap, cap);
+    }
+
+    function starForceOptions(item, ctx) {
+        if (item.locked || item.sfKind !== 'ordinary') return [];
+        if (!item.stars && !(item.starCap > 0)) return [];   // never starred: emblems, badges, pockets
+        const cap = sfCap(item, ctx.settings);
+        if (item.stars >= cap) return [];
+        const climb = sfSteps(item, cap, ctx.settings);
+        const out = [];
+        // Every start star, so the plan can continue a chain it has begun.
+        for (let from = item.stars; from < cap; from++) {
+            for (let to = from + 1; to <= cap; to++) {
+                const c = climb(from, to);
+                const gain = fdGain(ctx.stats, sfDelta(item, from, to, ctx.className), ctx.pdr);
+                if (gain <= 0 || !isFinite(c.cost)) continue;
+                out.push({
+                    type: 'starforce', slot: item.slot, start: item.stars, from, to,
+                    label: `${item.name} ${from}★→${to}★`,
+                    detail: `~${c.attempts.toFixed(0)} attempts · ${c.booms.toFixed(2)} booms expected`,
+                    cost: c.cost, fdGain: gain,
+                });
+            }
+        }
+        return out;
+    }
+
+    // ── Cube options ────────────────────────────────────────────────────────
+
+    const TIER_ORDER = ['rare', 'epic', 'unique', 'legendary'];
+
+    function describeLines(lines) {
+        const name = { 'main%': 'Main', 'sub%': 'Sub', 'all%': 'All', 'att%': 'ATT', boss: 'Boss', ied: 'IED',
+            dmg: 'Dmg', critDmg: 'CD', main: 'Main', att: 'ATT', mainPerLevel: 'Main/lv', cooldown: 'CDR' };
+        const useful = lines.filter(l => name[l.stat]);
+        if (!useful.length) return 'any';
+        return useful.map(l => `${name[l.stat]} ${l.value}${l.stat === 'cooldown' ? 's'
+            : /%$|boss|ied|dmg|critDmg/.test(l.stat) ? '%' : ''}`).join(' / ');
+    }
+
+    function cubeOptions(item, ctx) {
+        const tables = T();
+        if (item.locked || !item.potTier || item.potTier === 'none') return [];
+        const pools = tables.cubePool(item.slot, item.level);
+        if (!pools) return [];
+        const current = item.potLines || [];
+        const out = [];
+        for (const [key, cube] of Object.entries(tables.CUBES)) {
+            const price = (ctx.settings[cube.priceKey] || 0) + tables.revealCost(item.level);
+            let tierCost = 0;
+            for (let t = TIER_ORDER.indexOf(item.potTier); t >= 0 && t < 3; t++) {
+                tierCost += price / cube.tierUp[TIER_ORDER[t]];
+            }
+            const outcomes = cubeOutcomes({
+                stats: ctx.stats, className: ctx.className, charLevel: ctx.charLevel,
+                currentLines: current, lineCount: item.lineCount || 3, pools,
+                primeChance: cube.primeChance, limits: tables.CUBE_LIMITS, pdr: ctx.pdr,
+            });
+            for (const th of cubeThresholds(outcomes)) {
+                out.push({
+                    type: 'cube', slot: item.slot, cube: key,
+                    label: `Cube ${item.name} until ≥ +${th.threshold.toFixed(2)}%`,
+                    detail: `${cube.name}s · ${tierCost ? 'tier up, then ' : ''}~${Math.round(th.rolls)} cubes`
+                        + ` · e.g. ${describeLines(th.at)}`,
+                    cost: tierCost + th.rolls * price, fdGain: th.gain,
+                });
+            }
+        }
+        return keepEfficientFrontier(out);
+    }
+
+    /**
+     * Of many alternative targets for one item, keeps the upper convex hull of
+     * (cost, gain) from the origin: the cheapest good target, then each bigger
+     * target whose extra gain is still bought at a better rate than any target
+     * beyond it. Anything under the hull is never the right next step.
+     */
+    function keepEfficientFrontier(options) {
+        const pts = options.filter(o => o.fdGain > 0 && isFinite(o.cost)).sort((a, b) => a.cost - b.cost);
+        const hull = [];
+        const cross = (o, a, b) => (a.cost - o.cost) * (b.fdGain - o.fdGain) - (a.fdGain - o.fdGain) * (b.cost - o.cost);
+        const origin = { cost: 0, fdGain: 0 };
+        for (const p of pts) {
+            if (hull.length && p.fdGain <= hull[hull.length - 1].fdGain) continue;
+            while (hull.length >= 1 && cross(hull.length >= 2 ? hull[hull.length - 2] : origin, hull[hull.length - 1], p) >= 0) hull.pop();
+            hull.push(p);
+        }
+        // Thin to targets at least 25% apart in cost: the curve is smooth, and
+        // a plan needs a handful of rungs per item, not every 0.01%.
+        const out = [];
+        hull.forEach((p, i) => {
+            const last = out[out.length - 1];
+            if (!last || i === hull.length - 1 || p.cost >= last.cost * 1.25) out.push(p);
+        });
+        return out;
+    }
+
+    // ── Flame options ───────────────────────────────────────────────────────
+
+    /** Flame line types that matter to a class, with their per-tier delta. */
+    function flameLineTypes(item, className) {
+        const tables = T();
+        const cs = classStats(className);
+        const L = item.level;
+        const single = tables.flameSingle(L), dbl = tables.flameDouble(L);
+        const four = ['str', 'dex', 'int', 'luk'];
+        const types = [];
+        const stat = (k, v) => (k === cs.main ? { mainBase: v } : k === cs.sub ? { subBase: v } : null);
+        for (const k of four) {
+            const d = stat(k, single);
+            if (d) types.push({ name: k.toUpperCase(), per: tier => scale(d, tier) });
+        }
+        for (let i = 0; i < 4; i++) {
+            for (let j = i + 1; j < 4; j++) {
+                const d = sumDeltas(stat(four[i], dbl), stat(four[j], dbl));
+                if (Object.keys(d).length) types.push({ name: `${four[i]}+${four[j]}`.toUpperCase(), per: tier => scale(d, tier) });
+            }
+        }
+        if (cs.main === 'hp') types.push({ name: 'HP', per: tier => ({ mainBase: tables.flameHp(L) * tier }) });
+        const weapon = item.slot === 'weapon';
+        const baseAtt = (item.baseStats && (cs.magic ? item.baseStats.matt : item.baseStats.att)) || 0;
+        types.push({ name: cs.magic ? 'MATT' : 'ATT', per: tier => ({
+            att: weapon ? tables.flameWeaponAtt(baseAtt, L, tier, ctxAdvantaged(item)) : tier }) });
+        types.push({ name: 'All%', per: tier => (cs.main === 'hp' ? { subPct: tier } : { mainPct: tier, subPct: tier }) });
+        if (weapon) {
+            types.push({ name: 'Boss', per: tier => ({ boss: 2 * tier }) });
+            types.push({ name: 'Dmg', per: tier => ({ dmg: tier }) });
+        }
+        return types;
+    }
+
+    const scale = (d, k) => Object.fromEntries(Object.entries(d).map(([a, v]) => [a, v * k]));
+    const ctxAdvantaged = item => T().FLAME_ADVANTAGED_SETS.has(item.set) || /genesis|destiny/i.test(item.name);
+
+    function choose(n, k) {
+        if (k < 0 || k > n) return 0;
+        let r = 1;
+        for (let i = 0; i < k; i++) r = r * (n - i) / (i + 1);
+        return r;
+    }
+
+    /**
+     * Distribution of flame outcomes as FD relative to the current flame.
+     * Lines are distinct types drawn from the pool; only types that matter to
+     * the class are enumerated, the rest are counted combinatorially.
+     */
+    function flameOutcomes(item, ctx) {
+        const tables = T();
+        const advantaged = ctxAdvantaged(item);
+        const types = flameLineTypes(item, ctx.className);
+        const N = item.slot === 'weapon' ? tables.FLAME_POOL_WEAPON : tables.FLAME_POOL_ARMOR;
+        const tiers = advantaged ? tables.FLAME_TIERS_ADVANTAGED : tables.FLAME_TIERS_NORMAL;
+        const lineCounts = advantaged ? [[4, 1]] : tables.FLAME_LINES_NORMAL;
+        const R = types.length;
+
+        // Each line type's delta per tier as a fixed-width vector, so the
+        // enumeration adds numbers instead of building objects.
+        const FIELDS = ['mainBase', 'subBase', 'att', 'mainPct', 'subPct', 'boss', 'dmg'];
+        const vec = d => FIELDS.map(f => d[f] || 0);
+        const perTier = types.map(t => tiers.map(([tier, pt]) => ({ v: vec(t.per(tier)), p: pt })));
+
+        const dist = new Map();
+        const acc = new Array(FIELDS.length).fill(0);
+        const chosen = [];
+        const leaf = p => {
+            const key = acc.join(',');
+            const prev = dist.get(key);
+            if (prev) prev.p += p; else dist.set(key, { v: acc.slice(), p });
+        };
+        const walkTiers = (i, p) => {
+            if (i === chosen.length) { leaf(p); return; }
+            for (const { v, p: pt } of perTier[chosen[i]]) {
+                for (let f = 0; f < v.length; f++) acc[f] += v[f];
+                walkTiers(i + 1, p * pt);
+                for (let f = 0; f < v.length; f++) acc[f] -= v[f];
+            }
+        };
+        const subsets = start => {
+            let pSet = 0;
+            for (const [k, pk] of lineCounts) pSet += pk * choose(N - R, k - chosen.length) / choose(N, k);
+            if (pSet) walkTiers(0, pSet);
+            if (chosen.length >= 4) return;
+            for (let i = start; i < R; i++) {
+                chosen.push(i);
+                subsets(i + 1);
+                chosen.pop();
+            }
+        };
+        subsets(0);
+
+        const current = flameDelta(item.flames, ctx.className);
+        const base = applyDelta(ctx.stats, negateDelta(current));
+        const before = damageIndex(ctx.stats, ctx.pdr);
+        const out = [];
+        for (const { v, p } of dist.values()) {
+            const delta = {};
+            FIELDS.forEach((f, k) => { if (v[k]) delta[f] = v[k]; });
+            out.push({ fd: (damageIndex(applyDelta(base, delta), ctx.pdr) / before - 1) * 100, p, lines: [] });
+        }
+        return out.sort((a, b) => b.fd - a.fd);
+    }
+
+    function flameOptions(item, ctx) {
+        const tables = T();
+        if (item.locked || !tables.FLAMEABLE_SLOTS.has(item.slot)) return [];
+        const price = ctx.settings.flameReset || 0;
+        if (!price) return [];
+        const outcomes = flameOutcomes(item, ctx);
+        const out = cubeThresholds(outcomes).map(th => ({
+            type: 'flame', slot: item.slot,
+            label: `Flame ${item.name} until ≥ +${th.threshold.toFixed(2)}%`,
+            detail: `~${Math.round(th.rolls)} meso resets, keeping the better roll`,
+            cost: th.rolls * price, fdGain: th.gain,
+        }));
+        return keepEfficientFrontier(out);
+    }
+
+    // ── Ranking ─────────────────────────────────────────────────────────────
+
+    /**
+     * Every upgrade option for a build, best meso-per-FD first. Options for
+     * one item and type are alternatives (a cube target, a flame target) or a
+     * chain (star force), which buildPlan resolves.
+     */
+    function recommend(build, settings = {}, { charLevel = 280 } = {}) {
+        const s = { ...DEFAULT_SETTINGS, ...settings };
+        const ctx = {
+            stats: normalizeStats({ ...build.stats, cdrValue: +s.cdrValue }), className: build.className,
+            charLevel, settings: s, pdr: +s.pdr || DEFAULT_PDR,
+        };
+        if (!damageIndex(ctx.stats, ctx.pdr)) return [];
+        const out = [];
+        for (const item of Object.values(build.items || {})) {
+            out.push(...starForceOptions(item, ctx), ...cubeOptions(item, ctx), ...flameOptions(item, ctx));
+        }
+        out.forEach(o => { o.mesoPerFd = o.cost / o.fdGain; });
+        return out.sort((a, b) => a.mesoPerFd - b.mesoPerFd);
+    }
+
+    /**
+     * Greedy plan over recommend()'s options: repeatedly takes the most
+     * efficient option still available. A star force step is available when it
+     * starts from the item's current planned star; taking one advances that
+     * item. A cube or flame target on an item that already has one is valued
+     * by the gain beyond the target already taken (a re-roll from scratch).
+     */
+    function buildPlan(options, limit = 25) {
+        const stars = {};
+        const taken = {};   // slot|type -> gain already planned
+        const plan = [];
+        const pool = options.slice();
+        while (plan.length < limit) {
+            let best = null, bestEff = Infinity, bestGain = 0;
+            for (const o of pool) {
+                let gain = o.fdGain;
+                if (o.type === 'starforce') {
+                    if ((stars[o.slot] ?? o.start) !== o.from) continue;
+                } else {
+                    gain -= taken[`${o.slot}|${o.type}`] || 0;
+                    if (gain <= 1e-6) continue;
+                }
+                const eff = o.cost / gain;
+                if (eff < bestEff) { best = o; bestEff = eff; bestGain = gain; }
+            }
+            if (!best) break;
+            pool.splice(pool.indexOf(best), 1);
+            if (best.type === 'starforce') {
+                stars[best.slot] = best.to;
+            } else {
+                taken[`${best.slot}|${best.type}`] = (taken[`${best.slot}|${best.type}`] || 0) + bestGain;
+            }
+            plan.push({ ...best, fdGain: bestGain, mesoPerFd: bestEff });
+        }
+        return plan;
+    }
+
+    // ── Importing builds ────────────────────────────────────────────────────
+
+    // MapleScouter stores the class in Korean.
+    const KOREAN_CLASS = {
+        '보우마스터': 'Bowmaster', '신궁': 'Marksman', '패스파인더': 'Pathfinder',
+        '윈드브레이커': 'Wind Archer', '와일드헌터': 'Wild Hunter', '메르세데스': 'Mercedes',
+        '카인': 'Kain', '캡틴': 'Corsair', '메카닉': 'Mechanic', '엔젤릭버스터': 'Angelic Buster',
+        '히어로': 'Hero', '팔라딘': 'Paladin', '다크나이트': 'Dark Knight', '소울마스터': 'Dawn Warrior',
+        '미하일': 'Mihile', '아란': 'Aran', '카이저': 'Kaiser', '아델': 'Adele', '제로': 'Zero',
+        '데몬어벤져': 'Demon Avenger', '데몬슬레이어': 'Demon Slayer', '제논': 'Xenon',
+        '나이트로드': 'Night Lord', '섀도어': 'Shadower', '듀얼블레이드': 'Dual Blade',
+        '나이트워커': 'Night Walker', '팬텀': 'Phantom', '카데나': 'Cadena', '호영': 'Hoyoung',
+        '칼리': 'Khali', '바이퍼': 'Buccaneer', '캐논슈터': 'Cannoneer', '은월': 'Shade',
+        '스트라이커': 'Thunder Breaker', '아크': 'Ark', '블래스터': 'Blaster',
+        '아크메이지(불,독)': 'Fire/Poison', '아크메이지(썬,콜)': 'Ice/Lightning', '비숍': 'Bishop',
+        '루미너스': 'Luminous', '에반': 'Evan', '배틀메이지': 'Battle Mage', '플레임위자드': 'Blaze Wizard',
+        '키네시스': 'Kinesis', '일리움': 'Illium', '라라': 'Lara', '칸나': 'Kanna', '하야토': 'Hayato',
+    };
+
+    /** Finds the first nested object satisfying pred (depth-first). */
+    function findNested(obj, pred, depth = 0) {
+        if (!obj || typeof obj !== 'object' || depth > 6) return null;
+        if (pred(obj)) return obj;
+        for (const v of Object.values(obj)) {
+            const hit = findNested(v, pred, depth + 1);
+            if (hit) return hit;
+        }
+        return null;
+    }
+
+    /** Normalises one item from an Upgrade Tracker build into the tracker's shape. */
+    function normalizeItem(slot, it) {
+        const num = v => (Number.isFinite(+v) ? +v : 0);
+        return {
+            slot,
+            name: it.name || slot,
+            set: it.equipmentSet || 'None',
+            level: num(it.itemLevel),
+            category: it.category || 'armor',
+            isWSE: !!it.isWSE,
+            stars: num(it.currentStars),
+            starCap: num(it.starforceCap) || null,
+            sfKind: it.starforceItemKind || 'ordinary',
+            flames: it.flames || null,
+            flameScore: num(it.flameScore),
+            potTier: it.potentialTier || 'none',
+            potLines: Array.isArray(it.potentialLines) ? it.potentialLines.map(l => ({ ...l })) : [],
+            lineCount: num(it.potentialPhysicalLineCount)
+                || (Array.isArray(it.potentialLines) && it.potentialLines.length) || 3,
+            baseStats: it.baseStats || null,
+            replacementCost: num(it.replacementCost),
+            spares: num(it.sparesOwned),
+            locked: !!(it.locked || it.skipRecommendations),
+        };
+    }
+
+    /**
+     * Turns an imported JSON file into { source, ign, className, level, stats,
+     * items }. Understands a GMS Upgrade Tracker build (anything holding a
+     * `gear` map and `characterStats`) and a MapleScouter manual preset, which
+     * only carries a stat sheet. Returns null when neither is recognised.
+     */
+    function importBuild(json) {
+        if (!json || typeof json !== 'object') return null;
+
+        if (json.type === 'maplescouter-manual-preset' && json.data && json.data.stat) {
+            const s = json.data.stat;
+            return {
+                source: 'maplescouter',
+                ign: null,
+                className: KOREAN_CLASS[s.myClass] || s.myClass || null,
+                level: +s.level || null,
+                stats: normalizeStats({
+                    mainBase: s.mainStatBase, mainPct: s.mainStatPer, mainFlat: s.mainStatAbs,
+                    subBase: s.subStatBase, subPct: s.subStatPer, subFlat: s.subStatAbs,
+                    att: s.atkBase, attPct: s.atkPercent, dmg: s.dmg, boss: s.bossDmg,
+                    critDmg: s.criticalDmg, ied: s.ignoreDef,
+                }),
+                items: null,
+            };
+        }
+
+        const build = findNested(json, o => o.gear && typeof o.gear === 'object' && !Array.isArray(o.gear)
+            && (o.characterStats || o.selectedClass));
+        if (!build) return null;
+        const cs = build.characterStats || {};
+        const ied = +cs.ied || 0;
+        const items = {};
+        for (const [slot, it] of Object.entries(build.gear)) {
+            if (it && typeof it === 'object' && (it.name || it.itemLevel)) items[slot] = normalizeItem(slot, it);
+        }
+        return {
+            source: 'gms-upgrade-tracker',
+            ign: build.name || build.id || build.ign || null,
+            className: build.selectedClass || null,
+            level: +build.characterLevel || +build.level || null,
+            sacredPower: +build.sacredPower || null,
+            stats: normalizeStats({
+                mainBase: cs.primaryStat, mainPct: cs.totalPercentStat, mainFlat: cs.additionalPrimaryStat,
+                subBase: cs.secondaryStat, subPct: cs.totalPercentSecondaryStat, subFlat: cs.additionalSecondaryStat,
+                att: cs.totalATT, attPct: cs.totalPercentATT, dmg: cs.damagePercent, boss: cs.bossDamagePercent,
+                critDmg: cs.critDamagePercent, ied: ied <= 1 ? ied * 100 : ied, fd: cs.finalDamagePercent,
+                model: cs.statModel,
+            }),
+            items,
+        };
+    }
+
+    root.UpgradeEngine = Object.assign(root.UpgradeEngine || {}, {
+        DEFAULT_PDR, DEFAULT_SETTINGS, parseMeso,
+        normalizeStats, damageIndex, applyDelta, fdGain, sumDeltas, negateDelta,
+        CLASS_STATS, classStats, parsePotentialLine, linesDelta, flameDelta,
+        KOREAN_CLASS, importBuild, normalizeItem, solveLinear, climbExpectation,
+        collapsePool, cubeOutcomes, cubeThresholds,
+        sfStep, sfSteps, sfDelta, flameOutcomes, recommend, buildPlan,
+    });
+})(typeof globalThis !== 'undefined' ? globalThis : this);

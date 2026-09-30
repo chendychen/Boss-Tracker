@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "boss-tracker",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8777"],
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tools/save-server.mjs", "8777"],
       "port": 8777
     }
   ]

@@ -24,6 +24,7 @@
             <button class="main-tab" onclick="switchMainTab('sellingStrategy')">💰 Selling Strategy</button>
             <button class="main-tab" onclick="switchMainTab('gearTracker')">🛡️ Gear Tracker</button>
             <button class="main-tab" onclick="switchMainTab('progression')">📈 Progression</button>
+            <button class="main-tab" onclick="switchMainTab('upgrades')">⚙️ Upgrades</button>
         </div>
         
         <div class="main-content">
@@ -92,6 +93,20 @@
                 <div id="progressionContent"></div>
             </div>
 
+            <!-- Upgrades Tab -->
+            <div id="upgradesTab" class="tab-content">
+                <div class="character-section">
+                    <div class="character-controls">
+                        <button class="save-btn" onclick="manualSave()">💾 Save</button>
+                        <span class="save-status" id="saveStatus">✓ Saved!</span>
+                    </div>
+
+                    <div class="character-tabs" id="upgradesCharacterTabs"></div>
+                </div>
+
+                <div id="upgradesContent"></div>
+            </div>
+
             <!-- Gear Tracker Tab -->
             <div id="gearTrackerTab" class="tab-content">
                 <div class="character-section">
@@ -110,6 +125,9 @@
         </div>
     </div>
 
+    <script src="upgrade-tables.js"></script>
+    <script src="upgrade-engine.js"></script>
+    <script src="upgrades-ui.js"></script>
     <script src="boss-tracker.js"></script>
 </body>
 </html>
