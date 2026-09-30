@@ -84,7 +84,7 @@ function sendJson(res, status, payload) {
     res.end(body);
 }
 
-const server = createServer(async (req, res) => {
+async function handle(req, res) {
     const url = new URL(req.url, `http://localhost:${PORT}`);
 
     if (req.method === 'POST' && url.pathname === '/api/save') {
@@ -133,12 +133,29 @@ const server = createServer(async (req, res) => {
     } catch {
         sendJson(res, 404, { error: 'Not found' });
     }
-});
+}
+
+// Both loopback addresses, never a network interface. "localhost" can resolve
+// to either one depending on the browser and any VPN in the way, so listening
+// on only one of them makes the page unreachable for some setups.
+const LOOPBACKS = [['127.0.0.1', `http://127.0.0.1:${PORT}/`], ['::1', `http://[::1]:${PORT}/`]];
 
 // Only listen when run directly; import-save.mjs imports rotateSave from here.
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-    server.listen(PORT, '127.0.0.1', () => {
-        console.log(`Boss Tracker: http://localhost:${PORT}/`);
-        console.log(`Saves in ${SAVE_DIR} (latest ${SAVE_LIMIT} kept)`);
-    });
+    let listening = 0;
+    for (const [host, url] of LOOPBACKS) {
+        const server = createServer(handle);
+        server.on('error', err => {
+            // IPv6 can be disabled on the machine; IPv4 alone still works.
+            console.warn(`Not listening on ${host}: ${err.code || err.message}`);
+            if (err.code === 'EADDRINUSE') console.warn(`Port ${PORT} is taken; is the tracker already running?`);
+        });
+        server.listen(PORT, host, () => {
+            console.log(`Boss Tracker: ${url}`);
+            if (++listening === 1) {
+                console.log(`Also http://localhost:${PORT}/`);
+                console.log(`Saves in ${SAVE_DIR} (latest ${SAVE_LIMIT} kept)`);
+            }
+        });
+    }
 }
