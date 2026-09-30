@@ -142,19 +142,141 @@ function setUpgradeStat(field, value) {
     if (!character) return;
     const build = ensureUpgradeBuild(character);
     build.stats = { ...UpgradeEngine.normalizeStats(build.stats), [field]: parseFloat(value) || 0 };
+    delete build.statsStale;
     saveToLocalStorage();
     renderUpgradesContent();
 }
 
-function setUpgradeItemField(slot, field, value) {
+// ── Gear editor ─────────────────────────────────────────────────────────────
+
+let upgradeEditSlot = null;     // slot open in the editor
+// 'upgrade': an edit is a change made in game, so the stat sheet follows it.
+// 'describe': the edit records gear already worn, which the sheet already has.
+let upgradeEditMode = null;
+
+function getUpgradeEditMode(build) {
+    return upgradeEditMode || (build && build.source === 'gms-upgrade-tracker' ? 'upgrade' : 'describe');
+}
+
+function setUpgradeEditMode(mode) {
+    upgradeEditMode = mode;
+    renderUpgradesContent();
+}
+
+function selectUpgradeSlot(slot) {
+    upgradeEditSlot = upgradeEditSlot === slot ? null : slot;
+    renderUpgradesContent();
+}
+
+/**
+ * Applies an edit to one item. In upgrade mode the stat sheet moves by the
+ * difference between the old and new item; changing to a different item also
+ * changes base stats and set effects, which are not modelled, so the sheet is
+ * flagged for a re-read from the game.
+ */
+function editUpgradeItem(slot, mutate, { swap = false } = {}) {
     const character = getActiveCharacter();
-    const item = character && character.upgradeBuild && character.upgradeBuild.items
-        && character.upgradeBuild.items[slot];
-    if (!item) return;
-    if (field === 'locked') item.locked = !!value;
-    else if (field === 'potLines') item.potLines = String(value).split('/').map(s => s.trim()).filter(Boolean);
-    else if (field === 'potTier') item.potTier = value;
-    else item[field] = parseFloat(value) || 0;
+    if (!character) return;
+    const build = ensureUpgradeBuild(character);
+    if (!build.items) build.items = {};
+    const before = build.items[slot] ? JSON.parse(JSON.stringify(build.items[slot])) : null;
+    const item = build.items[slot] || UpgradeEngine.newItem(slot);
+    mutate(item);
+    build.items[slot] = item;
+    if (getUpgradeEditMode(build) === 'upgrade') {
+        build.stats = UpgradeEngine.restatItem(build.stats, before, item,
+            build.className, getCharLevel(character));
+        if (swap) build.statsStale = true;
+    }
+    saveToLocalStorage();
+    renderUpgradesCharacterTabs();
+    renderUpgradesContent();
+}
+
+function setUpgradeItemField(slot, field, value) {
+    editUpgradeItem(slot, item => {
+        if (field === 'locked') item.locked = !!value;
+        else if (field === 'potTier') item.potTier = value;
+        else if (field === 'name') item.name = String(value);
+        else if (field === 'set') item.set = String(value);
+        else if (field === 'replacementCost') item.replacementCost = UpgradeEngine.parseMeso(value, 0);
+        else if (field === 'baseAtt') {
+            item.baseStats = { ...(item.baseStats || {}), att: parseFloat(value) || 0, matt: parseFloat(value) || 0 };
+        } else if (field === 'lineCount') {
+            item.lineCount = Math.max(1, Math.min(3, parseInt(value, 10) || 3));
+            item.potLines = (item.potLines || []).slice(0, item.lineCount);
+        } else item[field] = parseFloat(value) || 0;
+    }, { swap: field === 'level' || field === 'set' });
+}
+
+function pickUpgradeCatalogItem(slot, index) {
+    const entry = UpgradeEngine.GEAR_CATALOG[+index];
+    if (!entry) return;
+    editUpgradeItem(slot, item => {
+        const fresh = UpgradeEngine.newItem(slot, entry);
+        // Keep what was rolled on the old item only when it is the same item.
+        const same = item.name === entry.name;
+        Object.assign(item, fresh, same ? {
+            potTier: item.potTier, potLines: item.potLines, flames: item.flames,
+            stars: item.stars, lineCount: item.lineCount,
+        } : {});
+    }, { swap: true });
+}
+
+function setUpgradeLine(slot, index, part, value) {
+    editUpgradeItem(slot, item => {
+        const lines = (item.potLines || []).map(l => ({ ...l }));
+        while (lines.length <= index) lines.push({ stat: 'other', value: 0 });
+        if (part === 'stat') {
+            const values = UpgradeEngine.lineValuesFor(slot, item.level, value);
+            lines[index] = { stat: value, value: values.length ? values[0] : lines[index].value };
+        } else {
+            lines[index].value = parseFloat(value) || 0;
+        }
+        item.potLines = lines.slice(0, item.lineCount || 3);
+    });
+}
+
+function setUpgradeFlame(slot, key, value) {
+    editUpgradeItem(slot, item => {
+        item.flames = { ...(item.flames || {}), [key]: parseFloat(value) || 0 };
+        item.flameScore = UpgradeEngine.flameScore(item.flames, getActiveCharacter().upgradeBuild.className);
+    });
+}
+
+function removeUpgradeItem(slot) {
+    const character = getActiveCharacter();
+    const build = character && character.upgradeBuild;
+    if (!build || !build.items || !build.items[slot]) return;
+    if (!confirm(`Remove ${build.items[slot].name || slot}?`)) return;
+    const before = build.items[slot];
+    delete build.items[slot];
+    if (getUpgradeEditMode(build) === 'upgrade') {
+        build.stats = UpgradeEngine.restatItem(build.stats, before, null, build.className, getCharLevel(character));
+        build.statsStale = true;
+    }
+    upgradeEditSlot = null;
+    saveToLocalStorage();
+    renderUpgradesCharacterTabs();
+    renderUpgradesContent();
+}
+
+function startBlankUpgradeBuild() {
+    const character = getActiveCharacter();
+    if (!character) return;
+    character.upgradeBuild = {
+        source: 'manual', file: 'entered by hand', importedAt: new Date().toISOString(),
+        className: null, stats: UpgradeEngine.normalizeStats({}), items: {},
+    };
+    upgradeEditMode = null;
+    saveToLocalStorage();
+    renderUpgradesCharacterTabs();
+    renderUpgradesContent();
+}
+
+function clearUpgradeStatsStale() {
+    const character = getActiveCharacter();
+    if (character && character.upgradeBuild) delete character.upgradeBuild.statsStale;
     saveToLocalStorage();
     renderUpgradesContent();
 }
@@ -177,9 +299,18 @@ function setUpgradeTypeFilter(type) {
 // against everything they depend on.
 const upgradeRecCache = new Map();
 
-function cachedRecommendations(character, build) {
-    const key = JSON.stringify([character.id, build.stats, build.items, build.className,
+function upgradeRecKey(character, build) {
+    return JSON.stringify([character.id, build.stats, build.items, build.className,
         upgradeSettings, getCharLevel(character)]);
+}
+
+function hasCachedRecommendations(character, build) {
+    const hit = upgradeRecCache.get(character.id);
+    return !!hit && hit.key === upgradeRecKey(character, build);
+}
+
+function cachedRecommendations(character, build) {
+    const key = upgradeRecKey(character, build);
     const hit = upgradeRecCache.get(character.id);
     if (hit && hit.key === key) return hit.recs;
     const recs = UpgradeEngine.recommend(build, upgradeSettings, { charLevel: getCharLevel(character) });
@@ -289,48 +420,217 @@ function renderUpgradeStats(character, build) {
         </details>`;
 }
 
+/** What a set of lines is worth: FD lost if they were all removed. */
+function upgradeLinesWorth(stats, delta) {
+    const without = UpgradeEngine.applyDelta(stats, UpgradeEngine.negateDelta(delta));
+    const base = UpgradeEngine.damageIndex(without, upgradeSettings.pdr);
+    return base ? (UpgradeEngine.damageIndex(stats, upgradeSettings.pdr) / base - 1) * 100 : 0;
+}
+
+function upgradeStatsFor(build) {
+    return UpgradeEngine.normalizeStats({ ...build.stats, cdrValue: upgradeSettings.cdrValue });
+}
+
+function describeUpgradeLine(line) {
+    if (!line || line.stat === 'other') return 'junk';
+    if (line.stat === 'cdr') return `CDR ${line.value}s`;
+    const label = (UpgradeEngine.LINE_LABELS[line.stat] || line.stat).replace(/ %$/, '');
+    return `${label} ${line.value}${/%$/.test(line.stat) ? '%' : line.stat === 'cdr' ? 's' : ''}`;
+}
+
 function renderUpgradeInventory(character, build) {
-    const items = Object.values(build.items || {})
-        .sort((a, b) => upgradeSlotRank(a.slot) - upgradeSlotRank(b.slot));
-    if (!items.length) {
-        return `<div class="upg-card upg-empty">No gear yet. Import a build file from the GMS Upgrade Tracker
-            (Gear page → Import / Export → Save this build to a file) into the <code>builds/</code> folder.</div>`;
-    }
-    const tiers = ['none', 'rare', 'epic', 'unique', 'legendary'];
+    const E = UpgradeEngine;
+    const stats = upgradeStatsFor(build);
+    const valued = !!E.damageIndex(stats);
+    const items = build.items || {};
+    const slots = [...E.STANDARD_SLOTS, ...Object.keys(items).filter(k => !E.STANDARD_SLOTS.includes(k))];
+    const mode = getUpgradeEditMode(build);
+    const fmtPct = v => (valued ? `+${v.toFixed(2)}%` : '—');
+
+    const rows = slots.map(slot => {
+        const it = items[slot];
+        const open = upgradeEditSlot === slot;
+        if (!it) {
+            return `<tr class="upg-row ${open ? 'upg-open' : ''}" onclick="selectUpgradeSlot('${slot}')">
+                    <td>${slot}</td><td class="upg-sub" colspan="8">empty · click to add</td></tr>
+                ${open ? `<tr class="upg-editor-row"><td colspan="9">${renderUpgradeItemEditor(character, build, slot, E.newItem(slot))}</td></tr>` : ''}`;
+        }
+        const lines = (it.potLines || []).length ? it.potLines.map(describeUpgradeLine).join(' / ') : '—';
+        const potWorth = upgradeLinesWorth(stats, E.linesDelta(it.potLines || [], build.className, getCharLevel(character)));
+        const flameWorth = upgradeLinesWorth(stats, E.flameDelta(it.flames, build.className));
+        const score = E.flameScore(it.flames, build.className);
+        return `<tr class="upg-row ${open ? 'upg-open' : ''} ${it.locked ? 'upg-locked' : ''}" onclick="selectUpgradeSlot('${slot}')">
+                <td>${slot}</td>
+                <td>${sanitizeInput(it.name || '(unnamed)')}<span class="upg-sub">${sanitizeInput(it.set || '')} · Lv ${it.level || '?'}</span></td>
+                <td>${it.sfKind === 'ordinary' ? `${it.stars}★` : it.stars ? `${it.stars}★ fixed` : '—'}</td>
+                <td><span class="upg-tier upg-tier-${it.potTier}">${it.potTier}</span></td>
+                <td>${sanitizeInput(lines)}</td>
+                <td class="upg-gain">${(it.potLines || []).length ? fmtPct(potWorth) : ''}</td>
+                <td>${score || ''}</td>
+                <td class="upg-gain">${score ? fmtPct(flameWorth) : ''}</td>
+                <td>${it.locked ? 'skip' : ''}</td>
+            </tr>
+            ${open ? `<tr class="upg-editor-row"><td colspan="9">${renderUpgradeItemEditor(character, build, slot, it)}</td></tr>` : ''}`;
+    }).join('');
+
     return `
-        <details class="upg-card">
-            <summary>Inventory · ${items.length} items</summary>
+        <div class="upg-card">
+            <div class="upg-plan-head">
+                <h3>Gear</h3>
+                <div class="upg-filters" title="Whether edits change the stat sheet">
+                    <button class="upg-filter ${mode === 'upgrade' ? 'active' : ''}" onclick="setUpgradeEditMode('upgrade')">Edits are upgrades I made</button>
+                    <button class="upg-filter ${mode === 'describe' ? 'active' : ''}" onclick="setUpgradeEditMode('describe')">Edits describe gear I wear</button>
+                </div>
+            </div>
+            <p class="upg-note">${mode === 'upgrade'
+                ? 'Each edit moves the stat sheet by the difference, so recording a new cube roll or flame updates your damage.'
+                : 'Edits leave the stat sheet alone: use this while entering gear the stat window already includes.'}
+                The Worth columns are the final damage each potential or flame gives now (what you would lose without it).
+                Click a row to edit it.</p>
+            ${build.statsStale ? `<div class="upg-stale"><span>An item was swapped or removed. Base stats and set effects changed in ways
+                the tracker does not model, so re-read the stat sheet from the game.</span>
+                <button class="prog-reset" onclick="clearUpgradeStatsStale()">Dismiss</button></div>` : ''}
             <div class="prog-table-wrap">
                 <table class="prog-table upg-table">
                     <thead><tr>
-                        <th>Slot</th><th>Item</th><th>Lv</th><th>★</th><th>Cap</th>
-                        <th>Potential</th><th>Lines (a / b / c)</th><th>Flame</th><th>Boom cost</th><th>Skip</th>
+                        <th>Slot</th><th>Item</th><th>★</th><th>Tier</th><th>Potential</th><th>Worth</th>
+                        <th>Flame score</th><th>Worth</th><th></th>
                     </tr></thead>
-                    <tbody>
-                    ${items.map(it => `
-                        <tr class="${it.locked ? 'upg-locked' : ''}">
-                            <td>${sanitizeInput(it.slot)}</td>
-                            <td>${sanitizeInput(it.name)}<div class="upg-sub">${sanitizeInput(it.set || '')}</div></td>
-                            <td>${it.level || ''}</td>
-                            <td><input class="upg-num" type="number" min="0" max="30" value="${it.stars}"
-                                       onchange="setUpgradeItemField('${it.slot}', 'stars', this.value)"></td>
-                            <td><input class="upg-num" type="number" min="0" max="30" value="${it.starCap || ''}"
-                                       onchange="setUpgradeItemField('${it.slot}', 'starCap', this.value)"></td>
-                            <td><select onchange="setUpgradeItemField('${it.slot}', 'potTier', this.value)">
-                                ${tiers.map(t => `<option ${it.potTier === t ? 'selected' : ''}>${t}</option>`).join('')}
-                            </select></td>
-                            <td><input class="upg-lines" type="text" value="${sanitizeInput((it.potLines || []).join(' / '))}"
-                                       onchange="setUpgradeItemField('${it.slot}', 'potLines', this.value)"></td>
-                            <td>${it.flameScore || ''}</td>
-                            <td><input class="upg-num upg-wide" type="text" value="${it.replacementCost ? fmtMeso(it.replacementCost) : ''}"
-                                       placeholder="trace" onchange="setUpgradeItemField('${it.slot}', 'replacementCost', UpgradeEngine.parseMeso(this.value, 0))"></td>
-                            <td><input type="checkbox" ${it.locked ? 'checked' : ''}
-                                       onchange="setUpgradeItemField('${it.slot}', 'locked', this.checked)"></td>
-                        </tr>`).join('')}
-                    </tbody>
+                    <tbody>${rows}</tbody>
                 </table>
             </div>
-        </details>`;
+        </div>`;
+}
+
+function renderUpgradeItemEditor(character, build, slot, it) {
+    const E = UpgradeEngine;
+    const cs = E.classStats(build.className);
+    const stats = upgradeStatsFor(build);
+    const valued = !!E.damageIndex(stats);
+    const exists = !!(build.items && build.items[slot]);
+    const catalog = E.GEAR_CATALOG.map((g, i) => ({ g, i })).filter(({ g }) => g.slot === slot);
+    const lineCount = it.lineCount || 3;
+    const tiers = ['none', 'rare', 'epic', 'unique', 'legendary'];
+    const sets = ['None', 'Eternal', 'Arcane Umbra', 'AbsoLab', 'CRA', 'Pitched Boss', 'Brilliant Boss',
+        'Dawn Boss', 'Superior Gollux', 'Boss Accessory'];
+    const inCatalog = catalog.some(({ g }) => g.name === it.name);
+
+    const pick = `
+        <div class="prog-field prog-field-wide">
+            <label>Item</label>
+            <select onchange="pickUpgradeCatalogItem('${slot}', this.value)">
+                <option value="">${inCatalog ? 'Change item…' : sanitizeInput(it.name || 'Pick an item…')}</option>
+                ${catalog.map(({ g, i }) => `<option value="${i}" ${g.name === it.name ? 'selected' : ''}>${sanitizeInput(g.name)} (Lv ${g.level})</option>`).join('')}
+            </select>
+        </div>`;
+    if (!exists) {
+        return `<div class="upg-editor" onclick="event.stopPropagation()">
+            <div class="prog-setup">${pick}
+                <div class="prog-field"><label>&nbsp;</label>
+                    <button class="save-btn" onclick="setUpgradeItemField('${slot}', 'name', 'Custom item')">Add a custom item</button>
+                </div>
+            </div></div>`;
+    }
+
+    const lineRows = [];
+    for (let i = 0; i < lineCount; i++) {
+        const line = (it.potLines || [])[i] || { stat: 'other', value: 0 };
+        const choices = E.lineStatsForSlot(slot);
+        if (!choices.includes(line.stat)) choices.unshift(line.stat);
+        const values = E.lineValuesFor(slot, it.level, line.stat);
+        if (line.stat !== 'other' && !values.includes(line.value)) values.unshift(line.value);
+        const worth = valued ? upgradeLinesWorth(stats, E.linesDelta([line], build.className, getCharLevel(character))) : 0;
+        lineRows.push(`
+            <div class="upg-line">
+                <span class="upg-sub">Line ${i + 1}</span>
+                <select onchange="setUpgradeLine('${slot}', ${i}, 'stat', this.value)">
+                    ${choices.map(c => `<option value="${c}" ${c === line.stat ? 'selected' : ''}>${E.LINE_LABELS[c] || c}</option>`).join('')}
+                </select>
+                ${line.stat === 'other' ? '' : `
+                <select onchange="setUpgradeLine('${slot}', ${i}, 'value', this.value)">
+                    ${values.map(v => `<option value="${v}" ${v === line.value ? 'selected' : ''}>${v}</option>`).join('')}
+                </select>`}
+                <span class="upg-gain">${valued && line.stat !== 'other' ? `+${worth.toFixed(2)}%` : ''}</span>
+            </div>`);
+    }
+
+    // Flame fields that matter to this class; other flame stats are kept but not shown.
+    const flameFields = cs.main === 'hp'
+        ? [['hp', 'HP'], [cs.sub, cs.sub.toUpperCase()], ['att', 'ATT']]
+        : [[cs.main, cs.main.toUpperCase()], [cs.sub, cs.sub.toUpperCase()],
+           [cs.magic ? 'matt' : 'att', cs.magic ? 'MATT' : 'ATT'], ['allStatPercent', 'All Stat %']];
+    if (slot === 'weapon') flameFields.push(['bossDamagePercent', 'Boss %'], ['damagePercent', 'Damage %']);
+    const flameable = E.TABLES.FLAMEABLE_SLOTS.has(slot);
+    const score = E.flameScore(it.flames, build.className);
+    const flameWorth = upgradeLinesWorth(stats, E.flameDelta(it.flames, build.className));
+
+    return `
+        <div class="upg-editor" onclick="event.stopPropagation()">
+            <div class="prog-setup">
+                ${pick}
+                <div class="prog-field">
+                    <label>Name</label>
+                    <input type="text" value="${sanitizeInput(it.name || '')}" onchange="setUpgradeItemField('${slot}', 'name', this.value)">
+                </div>
+                <div class="prog-field">
+                    <label>Item level</label>
+                    <input type="number" value="${it.level || ''}" onchange="setUpgradeItemField('${slot}', 'level', this.value)">
+                </div>
+                <div class="prog-field">
+                    <label>Set</label>
+                    <select onchange="setUpgradeItemField('${slot}', 'set', this.value)">
+                        ${[...new Set([it.set || 'None', ...sets])].map(v => `<option ${v === it.set ? 'selected' : ''}>${v}</option>`).join('')}
+                    </select>
+                </div>
+                ${it.sfKind === 'ordinary' ? `
+                <div class="prog-field">
+                    <label>Stars</label>
+                    <input type="number" min="0" max="30" value="${it.stars || 0}" onchange="setUpgradeItemField('${slot}', 'stars', this.value)">
+                </div>
+                <div class="prog-field">
+                    <label>Star target (blank = default)</label>
+                    <input type="number" min="0" max="30" value="${it.starCap || ''}" onchange="setUpgradeItemField('${slot}', 'starCap', this.value)">
+                </div>` : ''}
+                <div class="prog-field">
+                    <label>Boom cost</label>
+                    <input type="text" value="${it.replacementCost ? fmtMeso(it.replacementCost) : ''}" placeholder="0 = trace restore"
+                           onchange="setUpgradeItemField('${slot}', 'replacementCost', this.value)">
+                </div>
+                ${slot === 'weapon' ? `
+                <div class="prog-field">
+                    <label>Base ${cs.magic ? 'MATT' : 'ATT'} (for flames)</label>
+                    <input type="number" value="${(it.baseStats && (cs.magic ? it.baseStats.matt : it.baseStats.att)) || ''}"
+                           onchange="setUpgradeItemField('${slot}', 'baseAtt', this.value)">
+                </div>` : ''}
+                <label class="upg-check"><input type="checkbox" ${it.locked ? 'checked' : ''}
+                    onchange="setUpgradeItemField('${slot}', 'locked', this.checked)"> Skip in plan</label>
+            </div>
+
+            <div class="upg-editor-cols">
+                <div>
+                    <h4>Potential</h4>
+                    <div class="upg-line">
+                        <select onchange="setUpgradeItemField('${slot}', 'potTier', this.value)">
+                            ${tiers.map(t => `<option ${t === it.potTier ? 'selected' : ''}>${t}</option>`).join('')}
+                        </select>
+                        <select onchange="setUpgradeItemField('${slot}', 'lineCount', this.value)">
+                            ${[3, 2].map(n => `<option value="${n}" ${n === lineCount ? 'selected' : ''}>${n} lines</option>`).join('')}
+                        </select>
+                    </div>
+                    ${it.potTier === 'none' ? '' : lineRows.join('')}
+                </div>
+                <div>
+                    <h4>Flames ${flameable ? `<span class="upg-sub">score ${score}${valued ? ` · worth +${flameWorth.toFixed(2)}%` : ''}</span>` : ''}</h4>
+                    ${flameable ? flameFields.map(([k, label]) => `
+                        <div class="upg-line">
+                            <span class="upg-sub upg-flame-label">${label}</span>
+                            <input class="upg-num upg-wide" type="number" value="${(it.flames && it.flames[k]) || ''}"
+                                   onchange="setUpgradeFlame('${slot}', '${k}', this.value)">
+                        </div>`).join('') : '<p class="upg-sub">This slot cannot be flamed.</p>'}
+                </div>
+            </div>
+            <button class="prog-reset" onclick="removeUpgradeItem('${slot}')">Remove item</button>
+        </div>`;
 }
 
 function renderUpgradePlan(character, build) {
@@ -338,6 +638,16 @@ function renderUpgradePlan(character, build) {
     const stats = UpgradeEngine.normalizeStats(build.stats);
     if (!UpgradeEngine.damageIndex(stats)) {
         return `<div class="upg-card upg-empty">Fill in the stat sheet to rank upgrades.</div>`;
+    }
+    if (!hasCachedRecommendations(character, build)) {
+        // Ranking takes about a second; draw the editor first and fill this in after.
+        setTimeout(() => {
+            if (getActiveCharacter() !== character || activeMainTab !== 'upgrades') return;
+            cachedRecommendations(character, build);
+            const slot = document.getElementById('upgradePlanSlot');
+            if (slot) slot.outerHTML = renderUpgradePlan(character, build);
+        }, 30);
+        return `<div class="upg-card upg-empty" id="upgradePlanSlot">Ranking upgrades…</div>`;
     }
     const all = cachedRecommendations(character, build);
     const counts = { starforce: 0, cube: 0, flame: 0 };
@@ -351,7 +661,7 @@ function renderUpgradePlan(character, build) {
     const typeLabel = { starforce: 'Star Force', cube: 'Cube', flame: 'Flame' };
 
     return `
-        <div class="upg-card">
+        <div class="upg-card" id="upgradePlanSlot">
             <div class="upg-plan-head">
                 <h3>Upgrade plan</h3>
                 <div class="upg-filters">
@@ -423,6 +733,7 @@ function renderUpgradesContent() {
                             ${files.length ? '' : 'disabled'}>Import from builds/</button>
                     <button class="copy-character-btn" onclick="refreshUpgradeBuildFiles()">↻</button>
                     <button class="import-btn" onclick="document.getElementById('upgradeBuildFile').click()">Open file…</button>
+                    ${character.upgradeBuild ? '' : '<button class="add-character-btn" onclick="startBlankUpgradeBuild()">Enter gear by hand</button>'}
                     <input type="file" id="upgradeBuildFile" accept=".json" style="display:none"
                            onchange="importUpgradeBuildFromFile(event)">
                 </div>

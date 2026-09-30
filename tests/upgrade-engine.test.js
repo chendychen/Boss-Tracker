@@ -277,3 +277,45 @@ describe('recommendations', () => {
         near(E.fdGain(SHEET, d), 1.4, 1e-9);
     });
 });
+
+describe('gear editing', () => {
+    test('flame score reproduces the site across classes', () => {
+        const cases = [
+            ['Bowmaster', { att: 251, allStatPercent: 6, bossDamagePercent: 10 }, 913],
+            ['Bowmaster', { dex: 107, att: 6, allStatPercent: 4 }, 165],
+            ['Pathfinder', { str: 42, dex: 102, allStatPercent: 6 }, 166],
+            ['Ice/Lightning', { int: 44, matt: 195, bossDamagePercent: 12 }, 749],
+            ['Ice/Lightning', { luk: 16, allStatPercent: 2 }, 21],
+            ['Demon Avenger', { str: 36, att: 6, hp: 3600 }, 227],
+            ['Demon Avenger', { hp: 3360, allStatPercent: 6 }, 192],
+        ];
+        for (const [cls, flames, want] of cases) assert.equal(E.flameScore(flames, cls), want, `${cls} ${JSON.stringify(flames)}`);
+    });
+
+    test('restating an item edit and undoing it returns the same sheet', () => {
+        const before = { ...E.newItem('hat', E.GEAR_CATALOG.find(g => g.name === 'Eternal Hat')), stars: 18,
+            potLines: [{ stat: 'dex%', value: 10 }], flames: { dex: 60 } };
+        const after = { ...before, stars: 22, potLines: [{ stat: 'dex%', value: 13 }, { stat: 'cdr', value: 2 }],
+            flames: { dex: 100, allStatPercent: 6 } };
+        const up = E.restatItem(SHEET, before, after, 'Bowmaster', 285);
+        assert.ok(E.damageIndex(up) > E.damageIndex(SHEET));
+        const back = E.restatItem(up, after, before, 'Bowmaster', 285);
+        const want = E.normalizeStats(SHEET);
+        for (const k of Object.keys(want)) if (typeof want[k] === 'number') near(back[k], want[k], 1e-9);
+    });
+
+    test('line choices fit the slot and level', () => {
+        assert.ok(E.lineStatsForSlot('gloves').includes('crit_dmg%'));
+        assert.ok(!E.lineStatsForSlot('hat').includes('boss%'));
+        assert.deepEqual([...E.lineValuesFor('hat', 250, 'dex%')].slice(0, 2), [13, 10]);
+        assert.deepEqual([...E.lineValuesFor('ring1', 150, 'dex%')].slice(0, 2), [12, 9]);
+        assert.deepEqual([...E.lineValuesFor('weapon', 200, 'boss%')], [40, 35, 30]);
+    });
+
+    test('catalog items become editable inventory items', () => {
+        const it = E.newItem('weapon', E.GEAR_CATALOG.find(g => g.name === 'Genesis Weapon'));
+        assert.equal(it.sfKind, 'fixed');
+        assert.equal(it.stars, 22);
+        assert.equal(it.potTier, 'legendary');
+    });
+});

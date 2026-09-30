@@ -810,6 +810,149 @@
         return plan;
     }
 
+    // ── Gear editing ────────────────────────────────────────────────────────
+
+    /**
+     * Flame score in the GMS Upgrade Tracker's convention, which reproduces
+     * every score in its exports: main + secondary/12 + 3 x ATT + 10 x all
+     * stat % + 10 x (boss + damage) %. Demon Avenger scores HP / 17.5 as its
+     * main stat and gets nothing from all stat %.
+     */
+    function flameScore(flames, className) {
+        if (!flames) return 0;
+        const cs = classStats(className);
+        const f = k => +flames[k] || 0;
+        const main = cs.main === 'hp' ? f('hp') / 17.5 : f(cs.main);
+        const attack = cs.magic ? f('matt') : f('att');
+        const allPct = cs.main === 'hp' ? 0 : f('allStatPercent');
+        return Math.round(main + f(cs.sub) / 12 + 3 * attack + 10 * allPct
+            + 10 * (f('bossDamagePercent') + f('damagePercent')));
+    }
+
+    /** Everything an item adds that the editor can change: stars, potential, flames. */
+    function itemContribution(item, className, charLevel) {
+        if (!item) return {};
+        const stars = item.sfKind === 'ordinary' ? sfDelta(item, 0, item.stars || 0, className) : {};
+        return sumDeltas(stars, linesDelta(item.potLines || [], className, charLevel),
+            flameDelta(item.flames, className));
+    }
+
+    /**
+     * Applies an item edit to a stat sheet: takes out what the old version of
+     * the item added and puts in what the new one adds. Set effects and base
+     * stats are not modelled, so swapping to a different item needs the stat
+     * sheet re-read from the game; changing stars, lines or flames does not.
+     */
+    function restatItem(stats, before, after, className, charLevel) {
+        return applyDelta(stats, sumDeltas(
+            negateDelta(itemContribution(before, className, charLevel)),
+            itemContribution(after, className, charLevel)));
+    }
+
+    // Potential line choices per slot, in the export's vocabulary.
+    const MAIN_STATS = ['str%', 'dex%', 'int%', 'luk%', 'allstat%', 'hp%'];
+    const SLOT_LINE_STATS = {
+        weapon: ['att%', 'matt%', 'boss%', 'ied%', 'damage%', ...MAIN_STATS, 'att', 'matt'],
+        secondary: ['att%', 'matt%', 'boss%', 'ied%', 'damage%', ...MAIN_STATS, 'att', 'matt'],
+        emblem: ['att%', 'matt%', 'ied%', 'damage%', ...MAIN_STATS, 'att', 'matt'],
+        hat: [...MAIN_STATS, 'cdr'],
+        gloves: [...MAIN_STATS, 'crit_dmg%', 'str', 'dex', 'int', 'luk'],
+    };
+    const LINE_LABELS = {
+        'str%': 'STR %', 'dex%': 'DEX %', 'int%': 'INT %', 'luk%': 'LUK %', 'allstat%': 'All Stat %',
+        'hp%': 'Max HP %', 'att%': 'ATT %', 'matt%': 'MATT %', 'boss%': 'Boss %', 'ied%': 'IED %',
+        'damage%': 'Damage %', 'crit_dmg%': 'Crit Damage %', cdr: 'Cooldown (s)', att: 'ATT',
+        matt: 'MATT', str: 'STR', dex: 'DEX', int: 'INT', luk: 'LUK', other: 'Other / junk',
+    };
+
+    function lineStatsForSlot(slot) {
+        return [...(SLOT_LINE_STATS[slot] || MAIN_STATS), 'other'];
+    }
+
+    /** Values a line can take on this slot and item level, best first. */
+    function lineValuesFor(slot, itemLevel, stat) {
+        const tables = root.UpgradeEngine.TABLES;
+        const pool = tables && tables.cubePool(slot, itemLevel || 200);
+        const values = new Set();
+        if (pool) [...pool.prime, ...pool.nonPrime].forEach(l => { if (l.stat === stat) values.add(l.value); });
+        // Lower tiers roll smaller values; offer the unique/epic steps too.
+        if (/%$/.test(stat) && !/boss|ied|crit/.test(stat)) {
+            const top = Math.max(0, ...values);
+            if (top) [top - 3, top - 6].filter(v => v > 0).forEach(v => values.add(v));
+        }
+        return [...values].sort((a, b) => b - a);
+    }
+
+    // Common endgame gear. Replacement costs are the site's defaults and are
+    // what a boom is charged at; everything is editable per item.
+    const G = (slot, name, level, set, replacementCost, extra = {}) =>
+        ({ slot, name, level, set, replacementCost, sfKind: 'ordinary', ...extra });
+    const GEAR_CATALOG = [
+        G('weapon', 'Genesis Weapon', 200, 'Eternal', 0, { sfKind: 'fixed', stars: 22, starCap: 22, lucky: true }),
+        G('weapon', 'Destiny Weapon', 250, 'Eternal', 0, { sfKind: 'destiny', stars: 22, starCap: 22, lucky: true }),
+        G('weapon', 'Arcane Umbra Weapon', 200, 'Arcane Umbra', 1e9),
+        G('weapon', 'AbsoLab Weapon', 160, 'AbsoLab', 3e8),
+        G('secondary', 'Secondary', 140, 'None', 5e8),
+        G('emblem', "Mitra's Rage", 200, 'Pitched Boss', 0),
+        G('emblem', 'Gold Maple Leaf Emblem', 100, 'None', 0),
+        ...['Hat', 'Top', 'Bottom', 'Shoes', 'Gloves', 'Cape', 'Shoulder']
+            .map(p => G(p.toLowerCase(), `Eternal ${p}`, 250, 'Eternal', 2e9)),
+        ...['Hat', 'Shoes', 'Gloves', 'Cape', 'Shoulder']
+            .map(p => G(p.toLowerCase(), `Arcane Umbra ${p}`, 200, 'Arcane Umbra', 1e8)),
+        G('top', 'Arcane Umbra Suit (overall)', 200, 'Arcane Umbra', 1e8),
+        ...['Hat', 'Shoes', 'Gloves', 'Cape', 'Shoulder']
+            .map(p => G(p.toLowerCase(), `AbsoLab ${p}`, 160, 'AbsoLab', 3e7)),
+        G('top', 'AbsoLab Overall', 160, 'AbsoLab', 3e7),
+        ...['Hat', 'Top', 'Bottom'].map(p => G(p.toLowerCase(), `CRA ${p}`, 150, 'CRA', 5e6)),
+        G('belt', 'Dreamy Belt', 200, 'Pitched Boss', 8e9),
+        G('belt', 'Superior Engraved Gollux Belt', 150, 'Superior Gollux', 5e8),
+        G('face', 'Berserked', 160, 'Pitched Boss', 8e9),
+        G('face', 'Twilight Mark', 140, 'Dawn Boss', 5e9),
+        G('eye', 'Magic Eyepatch', 160, 'Pitched Boss', 8e9),
+        G('eye', 'Papulatus Mark', 145, 'Boss Accessory', 5e8),
+        G('earring', 'Commanding Force Earring', 200, 'Pitched Boss', 8e9),
+        G('earring', 'Estella Earrings', 160, 'Dawn Boss', 5e9),
+        G('earring', 'Superior Gollux Earring', 150, 'Superior Gollux', 5e8),
+        ...['pendant1', 'pendant2'].flatMap(s => [
+            G(s, 'Source of Suffering', 160, 'Pitched Boss', 8e9),
+            G(s, 'Daybreak Pendant', 140, 'Dawn Boss', 5e9),
+            G(s, 'Superior Gollux Pendant', 150, 'Superior Gollux', 5e8),
+            G(s, 'Dominator Pendant', 140, 'Boss Accessory', 5e8),
+        ]),
+        ...['ring1', 'ring2', 'ring3', 'ring4'].flatMap(s => [
+            G(s, 'Endless Terror', 200, 'Pitched Boss', 8e9),
+            G(s, 'Dawn Guardian Angel Ring', 160, 'Dawn Boss', 5e9),
+            G(s, 'Superior Gollux Ring', 150, 'Superior Gollux', 5e8),
+            G(s, 'Guardian Angel Ring', 160, 'None', 5e8),
+            G(s, 'Meister Ring', 140, 'None', 5e8),
+            G(s, "Kanna's Treasure", 140, 'Boss Accessory', 5e8),
+            G(s, 'Oz Ring', 150, 'None', 0, { sfKind: 'special', locked: true }),
+        ]),
+        G('pocket', 'Cursed Spellbook', 160, 'Pitched Boss', 8e9),
+        G('pocket', 'Pink Holy Cup', 140, 'Boss Accessory', 0),
+        G('heart', 'Black Heart', 120, 'Pitched Boss', 0, { sfKind: 'special', stars: 15, starCap: 15 }),
+        G('heart', 'Plasma Heart', 130, 'None', 3e9),
+        G('badge', 'Crystal Ventus Badge', 130, 'None', 0),
+        G('medal', 'Medal', 1, 'None', 0),
+    ];
+    const STANDARD_SLOTS = ['weapon', 'secondary', 'emblem', 'hat', 'top', 'bottom', 'shoes', 'gloves',
+        'cape', 'shoulder', 'ring1', 'ring2', 'ring3', 'ring4', 'pendant1', 'pendant2', 'earring',
+        'face', 'eye', 'belt', 'badge', 'heart', 'medal', 'pocket'];
+
+    /** A fresh inventory item from a catalog entry (or a bare slot). */
+    function newItem(slot, entry = null) {
+        const e = entry || { slot, name: '', level: 200, set: 'None', replacementCost: 0, sfKind: 'ordinary' };
+        return normalizeItem(slot, {
+            name: e.name, itemLevel: e.level, equipmentSet: e.set, replacementCost: e.replacementCost,
+            starforceItemKind: e.sfKind, currentStars: e.stars || 0, starforceCap: e.starCap || 0,
+            category: slot === 'weapon' || slot === 'secondary' || slot === 'emblem' ? 'weapon' : 'armor',
+            isWSE: ['weapon', 'secondary', 'emblem'].includes(slot),
+            potentialTier: /badge|medal/.test(slot) || e.sfKind === 'special' ? 'none' : 'legendary',
+            potentialLines: [], potentialPhysicalLineCount: 3, locked: !!e.locked,
+            flames: {}, baseStats: { att: 0, matt: 0 },
+        });
+    }
+
     // ── Importing builds ────────────────────────────────────────────────────
 
     // MapleScouter stores the class in Korean.
@@ -925,5 +1068,7 @@
         KOREAN_CLASS, importBuild, normalizeItem, solveLinear, climbExpectation,
         collapsePool, cubeOutcomes, cubeThresholds,
         sfStep, sfSteps, sfDelta, flameOutcomes, recommend, buildPlan,
+        flameScore, itemContribution, restatItem, lineStatsForSlot, lineValuesFor, LINE_LABELS,
+        GEAR_CATALOG, STANDARD_SLOTS, newItem,
     });
 })(typeof globalThis !== 'undefined' ? globalThis : this);
