@@ -296,7 +296,8 @@ function serializeCharacter(char) {
         executionFactor: char.executionFactor || null,
         manualDps: char.manualDps || null,
         ied: (char.ied === null || char.ied === undefined) ? null : char.ied,
-        upgradeBuild: char.upgradeBuild || null
+        upgradeBuild: char.upgradeBuild || null,
+        className: char.className || (char.upgradeBuild && char.upgradeBuild.className) || null
     };
 }
 
@@ -338,7 +339,8 @@ function deserializeCharacter(char) {
         executionFactor: char.executionFactor || null,
         manualDps: char.manualDps || null,
         ied: (char.ied === null || char.ied === undefined) ? null : char.ied,
-        upgradeBuild: char.upgradeBuild || null
+        upgradeBuild: char.upgradeBuild || null,
+        className: char.className || (char.upgradeBuild && char.upgradeBuild.className) || null
     };
 }
 

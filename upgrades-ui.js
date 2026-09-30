@@ -9,12 +9,28 @@ let upgradeBuildFiles = null;        // listing of builds/ from the local server
 let upgradeTypeFilter = 'all';       // all | starforce | cube | flame
 const UPGRADE_PLAN_ROWS = 25;
 
-const UPGRADE_STAT_FIELDS = [
-    ['mainBase', 'Main stat (base)'], ['mainPct', 'Main stat %'], ['mainFlat', 'Main stat (flat)'],
-    ['subBase', 'Secondary (base)'], ['subPct', 'Secondary %'], ['subFlat', 'Secondary (flat)'],
-    ['att', 'ATT / MATT'], ['attPct', 'ATT %'], ['dmg', 'Damage %'], ['boss', 'Boss damage %'],
-    ['critDmg', 'Crit damage %'], ['ied', 'IED %'],
-];
+/** Stat sheet fields, labelled with the class's own stats when it is known. */
+function upgradeStatFields(className) {
+    const cs = UpgradeEngine.CLASS_STATS[className];
+    const main = cs ? UpgradeEngine.STAT_NAMES[cs.main] : 'Main stat';
+    const sub = cs ? UpgradeEngine.STAT_NAMES[cs.sub] : 'Secondary';
+    const atk = cs ? (cs.magic ? 'MATT' : 'ATT') : 'ATT / MATT';
+    return [
+        ['mainBase', `${main} (base)`], ['mainPct', `${main} %`], ['mainFlat', `${main} (flat, not % scaled)`],
+        ['subBase', `${sub} (base)`], ['subPct', `${sub} %`], ['subFlat', `${sub} (flat)`],
+        ['att', atk], ['attPct', `${atk} %`], ['dmg', 'Damage %'], ['boss', 'Boss damage %'],
+        ['critDmg', 'Crit damage %'], ['ied', 'IED %'],
+    ];
+}
+
+/**
+ * A character's class. It lives on the character so it survives re-imports
+ * and applies before any gear is entered; a build's own class is only a
+ * fallback for characters saved before the field existed.
+ */
+function getCharClass(character) {
+    return (character && (character.className || (character.upgradeBuild && character.upgradeBuild.className))) || null;
+}
 
 const UPGRADE_SLOT_ORDER = [
     'weapon', 'secondary', 'emblem', 'hat', 'top', 'bottom', 'overall', 'shoulder', 'cape',
@@ -40,8 +56,10 @@ function renderUpgradesCharacterTabs() {
     if (!container) return;
     container.innerHTML = characters.map(char => {
         const build = char.upgradeBuild;
-        const note = build && build.items ? `${Object.keys(build.items).length} items`
+        const gear = build && build.items ? `${Object.keys(build.items).length} items`
             : build ? 'stats only' : 'no build';
+        const cls = getCharClass(char);
+        const note = cls ? `${cls} · ${gear}` : gear;
         return `
             <div class="character-tab ${char.id === activeCharacterId ? 'active' : ''}"
                  onclick="switchCharacter(${char.id})">
@@ -79,6 +97,12 @@ function adoptUpgradeBuild(json, label) {
     const current = character.upgradeBuild;
     if (imported.items && current && current.items
         && !confirm(`Replace ${character.name}'s gear with ${label}?`)) return;
+    const known = getCharClass(character);
+    if (imported.className && known && imported.className !== known
+        && confirm(`${label} is a ${imported.className}, but ${character.name} is set as ${known}. Switch ${character.name} to ${imported.className}?`)) {
+        character.className = imported.className;
+    }
+    if (!known && imported.className) character.className = imported.className;
 
     character.upgradeBuild = {
         ...(current || {}),
@@ -86,7 +110,7 @@ function adoptUpgradeBuild(json, label) {
         file: label,
         importedAt: new Date().toISOString(),
         ign: imported.ign || (current && current.ign) || null,
-        className: imported.className || (current && current.className) || null,
+        className: getCharClass(character) || imported.className || null,
         stats: imported.stats,
         items: imported.items || (current && current.items) || null,
     };
@@ -124,7 +148,8 @@ function importUpgradeBuildFromFile(event) {
 
 function ensureUpgradeBuild(character) {
     if (!character.upgradeBuild) {
-        character.upgradeBuild = { source: 'manual', stats: UpgradeEngine.normalizeStats({}), items: {} };
+        character.upgradeBuild = { source: 'manual', stats: UpgradeEngine.normalizeStats({}), items: {},
+                                   className: getCharClass(character) };
     }
     return character.upgradeBuild;
 }
@@ -132,8 +157,10 @@ function ensureUpgradeBuild(character) {
 function setUpgradeClass(value) {
     const character = getActiveCharacter();
     if (!character) return;
-    ensureUpgradeBuild(character).className = value || null;
+    character.className = value || null;
+    if (character.upgradeBuild) character.upgradeBuild.className = character.className;
     saveToLocalStorage();
+    renderUpgradesCharacterTabs();
     renderUpgradesContent();
 }
 
@@ -266,7 +293,7 @@ function startBlankUpgradeBuild() {
     if (!character) return;
     character.upgradeBuild = {
         source: 'manual', file: 'entered by hand', importedAt: new Date().toISOString(),
-        className: null, stats: UpgradeEngine.normalizeStats({}), items: {},
+        className: getCharClass(character), stats: UpgradeEngine.normalizeStats({}), items: {},
     };
     upgradeEditMode = null;
     saveToLocalStorage();
@@ -396,21 +423,13 @@ function renderUpgradeSettings() {
 
 function renderUpgradeStats(character, build) {
     const stats = UpgradeEngine.normalizeStats(build.stats);
-    const classes = Object.keys(UpgradeEngine.CLASS_STATS).sort();
     return `
         <details class="upg-card" ${build.items && Object.keys(build.items).length ? '' : 'open'}>
-            <summary>Stat sheet${build.className ? ` · ${sanitizeInput(build.className)}` : ''}</summary>
+            <summary>Stat sheet</summary>
             <p class="upg-note">Values from the in-game stat window with your usual bossing buffs.
                 Only ratios matter, so small errors shift every upgrade alike.</p>
             <div class="prog-setup">
-                <div class="prog-field">
-                    <label>Class</label>
-                    <select onchange="setUpgradeClass(this.value)">
-                        <option value="">—</option>
-                        ${classes.map(c => `<option ${build.className === c ? 'selected' : ''}>${c}</option>`).join('')}
-                    </select>
-                </div>
-                ${UPGRADE_STAT_FIELDS.map(([k, label]) => `
+                ${upgradeStatFields(build.className).map(([k, label]) => `
                     <div class="prog-field">
                         <label>${label}</label>
                         <input type="number" step="any" value="${stats[k] || ''}"
@@ -535,7 +554,7 @@ function renderUpgradeItemEditor(character, build, slot, it) {
     const lineRows = [];
     for (let i = 0; i < lineCount; i++) {
         const line = (it.potLines || [])[i] || { stat: 'other', value: 0 };
-        const choices = E.lineStatsForSlot(slot);
+        const choices = E.lineStatsForSlot(slot, build.className);
         if (!choices.includes(line.stat)) choices.unshift(line.stat);
         const values = E.lineValuesFor(slot, it.level, line.stat);
         if (line.stat !== 'other' && !values.includes(line.value)) values.unshift(line.value);
@@ -709,8 +728,22 @@ function renderUpgradesContent() {
     if (!character) { container.innerHTML = ''; return; }
     if (upgradeBuildFiles === null) { upgradeBuildFiles = []; refreshUpgradeBuildFiles(); }
 
-    const build = character.upgradeBuild || { stats: {}, items: null };
+    const cls = getCharClass(character);
+    if (character.upgradeBuild && cls && character.upgradeBuild.className !== cls) {
+        character.upgradeBuild.className = cls;
+    }
+    const build = character.upgradeBuild || { stats: {}, items: null, className: cls };
     const files = upgradeBuildFiles || [];
+    const classes = Object.keys(UpgradeEngine.CLASS_STATS).sort();
+    const classPicker = `
+        <div class="upg-class">
+            <select onchange="setUpgradeClass(this.value)" title="Sets main stat, secondary stat and ATT or MATT">
+                <option value="">Class…</option>
+                ${classes.map(c => `<option ${cls === c ? 'selected' : ''}>${c}</option>`).join('')}
+            </select>
+            <span class="upg-sub">${cls ? UpgradeEngine.describeClass(cls)
+                : 'Pick a class so lines and stats match the character'}</span>
+        </div>`;
     const source = character.upgradeBuild
         ? `${sanitizeInput(character.upgradeBuild.file || character.upgradeBuild.source)}
            ${character.upgradeBuild.importedAt ? ` · imported ${character.upgradeBuild.importedAt.slice(0, 10)}` : ''}`
@@ -722,6 +755,7 @@ function renderUpgradesContent() {
                 <div>
                     <strong>${sanitizeInput(character.name)}</strong>
                     <span class="upg-sub">${source}</span>
+                    ${classPicker}
                 </div>
                 <div class="upg-import-controls">
                     <select id="upgradeBuildSelect">

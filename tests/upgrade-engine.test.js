@@ -319,3 +319,44 @@ describe('gear editing', () => {
         assert.equal(it.potTier, 'legendary');
     });
 });
+
+describe('class-aware line choices', () => {
+    const stats = slot => cls => [...E.lineStatsForSlot(slot, cls)];
+
+    test('a DEX archer sees only DEX, STR, all stat and ATT lines', () => {
+        const w = stats('weapon')('Bowmaster');
+        for (const s of ['dex%', 'str%', 'allstat%', 'att%', 'att', 'boss%', 'ied%', 'damage%']) assert.ok(w.includes(s), s);
+        for (const s of ['int%', 'luk%', 'matt%', 'matt', 'hp%']) assert.ok(!w.includes(s), s);
+    });
+
+    test('a mage sees MATT and INT/LUK', () => {
+        const w = stats('weapon')('Ice/Lightning');
+        assert.ok(w.includes('matt%') && w.includes('int%') && w.includes('luk%'));
+        assert.ok(!w.includes('att%') && !w.includes('dex%'));
+    });
+
+    test('Demon Avenger keeps HP and STR, and gloves keep only its flat stats', () => {
+        const hat = stats('hat')('Demon Avenger');
+        assert.ok(hat.includes('hp%') && hat.includes('str%') && hat.includes('cdr'));
+        assert.ok(!hat.includes('dex%'));
+        const gloves = stats('gloves')('Demon Avenger');
+        assert.ok(gloves.includes('str') && !gloves.includes('dex') && gloves.includes('crit_dmg%'));
+    });
+
+    test('Shadower keeps its third stat', () => {
+        const hat = stats('hat')('Shadower');
+        assert.ok(hat.includes('luk%') && hat.includes('dex%') && hat.includes('str%') && !hat.includes('int%'));
+    });
+
+    test('an unknown class keeps every option', () => {
+        const hat = stats('hat')(null);
+        assert.ok(['str%', 'dex%', 'int%', 'luk%', 'hp%'].every(s => hat.includes(s)));
+    });
+
+    test('newer classes use the main stats their wiki pages give', () => {
+        assert.equal(E.classStats('Mo Xuan').main, 'dex');
+        assert.equal(E.classStats('Erel Light').main, 'str');
+        assert.equal(E.classStats('Sia').main, 'int');
+        assert.equal(E.describeClass('Pathfinder'), 'DEX main · STR secondary · ATT');
+    });
+});

@@ -142,28 +142,42 @@
 
     // ── Classes ─────────────────────────────────────────────────────────────
     // Main and secondary stat, and whether the class attacks with MATT.
-    // Demon Avenger (HP) and Xenon (three stats) are approximated; their stat
-    // lines are valued as if main stat, which is close for potential ranking.
+    // `also` lists a third stat the class draws on: Shadower, Dual Blade and
+    // Cadena use STR alongside DEX, and Xenon uses all of STR, DEX and LUK.
+    // Those stats are offered as potential lines but valued at nothing, which
+    // undervalues them slightly. Demon Avenger's main stat is HP.
+    // Sources for the newer classes: maplestorywiki.net class pages (Sia
+    // Astelle INT/LUK, Erel Light STR, Mo Xuan DEX, Lynn INT).
     const CLASS_STATS = (() => {
         const t = {};
-        const set = (names, main, sub, magic = false) =>
-            names.forEach(n => { t[n] = { main, sub, magic }; });
+        const set = (names, main, sub, magic = false, also = []) =>
+            names.forEach(n => { t[n] = { main, sub, magic, also }; });
         set(['Hero', 'Paladin', 'Dark Knight', 'Dawn Warrior', 'Mihile', 'Aran', 'Kaiser',
              'Adele', 'Zero', 'Hayato', 'Ren', 'Erel Light', 'Blaster', 'Thunder Breaker',
-             'Buccaneer', 'Shade', 'Ark', 'Cannoneer', 'Demon Slayer', 'Mo Xuan'], 'str', 'dex');
+             'Buccaneer', 'Shade', 'Ark', 'Cannoneer', 'Demon Slayer'], 'str', 'dex');
         set(['Bowmaster', 'Marksman', 'Pathfinder', 'Wind Archer', 'Wild Hunter', 'Mercedes',
-             'Kain', 'Corsair', 'Mechanic', 'Angelic Buster'], 'dex', 'str');
-        set(['Night Lord', 'Shadower', 'Dual Blade', 'Night Walker', 'Phantom', 'Cadena',
-             'Hoyoung', 'Khali'], 'luk', 'dex');
+             'Kain', 'Corsair', 'Mechanic', 'Angelic Buster', 'Mo Xuan'], 'dex', 'str');
+        set(['Night Lord', 'Night Walker', 'Phantom', 'Hoyoung', 'Khali'], 'luk', 'dex');
+        set(['Shadower', 'Dual Blade', 'Cadena'], 'luk', 'dex', false, ['str']);
         set(['Fire/Poison', 'Ice/Lightning', 'Bishop', 'Luminous', 'Evan', 'Battle Mage',
              'Blaze Wizard', 'Kinesis', 'Illium', 'Lara', 'Kanna', 'Lynn', 'Sia'], 'int', 'luk', true);
         set(['Demon Avenger'], 'hp', 'str');
-        set(['Xenon'], 'str', 'dex');
+        set(['Xenon'], 'str', 'dex', false, ['luk']);
         return t;
     })();
 
+    const STAT_NAMES = { str: 'STR', dex: 'DEX', int: 'INT', luk: 'LUK', hp: 'HP' };
+
+    /** "DEX main · STR secondary · ATT" for a class, or '' when unknown. */
+    function describeClass(className) {
+        const cs = CLASS_STATS[className];
+        if (!cs) return '';
+        const also = cs.also.length ? ` (+${cs.also.map(k => STAT_NAMES[k]).join(', ')})` : '';
+        return `${STAT_NAMES[cs.main]} main · ${STAT_NAMES[cs.sub]}${also} secondary · ${cs.magic ? 'MATT' : 'ATT'}`;
+    }
+
     function classStats(className) {
-        return CLASS_STATS[className] || { main: 'str', sub: 'dex', magic: false };
+        return CLASS_STATS[className] || { main: 'str', sub: 'dex', magic: false, also: [] };
     }
 
     // ── Potential lines ─────────────────────────────────────────────────────
@@ -865,8 +879,25 @@
         matt: 'MATT', str: 'STR', dex: 'DEX', int: 'INT', luk: 'LUK', other: 'Other / junk',
     };
 
-    function lineStatsForSlot(slot) {
-        return [...(SLOT_LINE_STATS[slot] || MAIN_STATS), 'other'];
+    /**
+     * Line stats worth offering on a slot. With a known class, stats the class
+     * does not use are left out: no INT or LUK lines for a DEX class, no MATT
+     * for a physical one, and Max HP only for Demon Avenger.
+     */
+    function lineStatsForSlot(slot, className) {
+        const all = SLOT_LINE_STATS[slot] || MAIN_STATS;
+        const cs = CLASS_STATS[className];
+        if (!cs) return [...all, 'other'];
+        const stats = new Set([cs.main, cs.sub, ...cs.also]);
+        const keep = stat => {
+            const base = stat.replace(/%$/, '');
+            if (base === 'allstat') return true;
+            if (base === 'att') return !cs.magic;
+            if (base === 'matt') return cs.magic;
+            if (['str', 'dex', 'int', 'luk', 'hp'].includes(base)) return stats.has(base);
+            return true;
+        };
+        return [...all.filter(keep), 'other'];
     }
 
     /** Values a line can take on this slot and item level, best first. */
@@ -1069,6 +1100,7 @@
         collapsePool, cubeOutcomes, cubeThresholds,
         sfStep, sfSteps, sfDelta, flameOutcomes, recommend, buildPlan,
         flameScore, itemContribution, restatItem, lineStatsForSlot, lineValuesFor, LINE_LABELS,
+        describeClass, STAT_NAMES,
         GEAR_CATALOG, STANDARD_SLOTS, newItem,
     });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

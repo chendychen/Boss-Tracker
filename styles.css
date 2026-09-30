@@ -885,3 +885,13 @@ tr.upg-editor-row > td { background: var(--cds-layer-02); padding: var(--spacing
     align-items: center;
     justify-content: space-between;
 }
+.upg-class { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-03); margin-top: var(--spacing-03); }
+.upg-class select {
+    background: var(--cds-field-01, #262626);
+    color: var(--cds-text-primary);
+    border: none;
+    border-bottom: 1px solid var(--cds-border-strong, #6f6f6f);
+    padding: 6px 10px;
+    font-family: inherit;
+}
+.upg-class .upg-sub { display: inline; }
