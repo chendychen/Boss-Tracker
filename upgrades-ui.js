@@ -248,7 +248,7 @@ function selectUpgradeSlot(slot) {
  * changes base stats and set effects, which are not modelled, so the sheet is
  * flagged for a re-read from the game.
  */
-function editUpgradeItem(slot, mutate, { swap = false } = {}) {
+function editUpgradeItem(slot, mutate, { swap = false, forceUpgrade = false } = {}) {
     const character = getActiveCharacter();
     if (!character) return;
     const build = ensureUpgradeBuild(character);
@@ -257,7 +257,7 @@ function editUpgradeItem(slot, mutate, { swap = false } = {}) {
     const item = build.items[slot] || UpgradeEngine.newItem(slot);
     mutate(item);
     build.items[slot] = item;
-    if (getUpgradeEditMode(build) === 'upgrade') {
+    if (forceUpgrade || getUpgradeEditMode(build) === 'upgrade') {
         build.stats = UpgradeEngine.restatItem(build.stats, before, item,
             build.className, getCharLevel(character));
         if (swap) build.statsStale = true;
@@ -717,6 +717,185 @@ function renderUpgradeItemEditor(character, build, slot, it) {
         </div>`;
 }
 
+// ── Recording results from the plan ─────────────────────────────────────────
+
+// The plan row being updated and a draft of what was hit. Nothing touches
+// the item until the draft is saved.
+let upgradeRecord = null;   // { key, slot, type, target, draft: { stars, potTier, potLines, flames } }
+
+function openUpgradeRecord(key, slot, type, toStar) {
+    if (upgradeRecord && upgradeRecord.key === key) { upgradeRecord = null; renderUpgradesContent(); return; }
+    const character = getActiveCharacter();
+    const item = character && character.upgradeBuild && character.upgradeBuild.items
+        && character.upgradeBuild.items[slot];
+    if (!item) return;
+    const rec = (upgradeRecordRows.get(key) || {});
+    const lineCount = item.lineCount || 3;
+    const lines = (item.potLines || []).map(l => ({ ...l }));
+    while (lines.length < lineCount) lines.push({ stat: 'other', value: 0 });
+    upgradeRecord = {
+        key, slot, type, rec,
+        draft: {
+            stars: type === 'starforce' && toStar !== undefined ? toStar : item.stars,
+            potTier: type === 'cube' ? 'legendary' : item.potTier,
+            potLines: lines.slice(0, lineCount),
+            flames: { ...(item.flames || {}) },
+        },
+    };
+    renderUpgradesContent();
+}
+
+function cancelUpgradeRecord() {
+    upgradeRecord = null;
+    renderUpgradesContent();
+}
+
+function setRecordField(field, value) {
+    if (!upgradeRecord) return;
+    const d = upgradeRecord.draft;
+    if (field === 'stars') d.stars = Math.max(0, Math.min(30, parseInt(value, 10) || 0));
+    else if (field === 'potTier') d.potTier = value;
+    renderUpgradesContent();
+}
+
+function setRecordLine(index, part, value) {
+    if (!upgradeRecord) return;
+    const character = getActiveCharacter();
+    const item = character.upgradeBuild.items[upgradeRecord.slot];
+    const line = upgradeRecord.draft.potLines[index];
+    if (part === 'stat') {
+        const values = UpgradeEngine.lineValuesFor(item.slot, item.level, value);
+        upgradeRecord.draft.potLines[index] = { stat: value, value: values.length ? values[0] : line.value };
+    } else {
+        line.value = parseFloat(value) || 0;
+    }
+    renderUpgradesContent();
+}
+
+function setRecordFlame(key, value) {
+    if (!upgradeRecord) return;
+    upgradeRecord.draft.flames[key] = parseFloat(value) || 0;
+    renderUpgradesContent();
+}
+
+/**
+ * Writes the recorded result to the item. A result is always an upgrade the
+ * player made, so the stat sheet moves by the difference whatever the gear
+ * editor's mode is.
+ */
+function saveUpgradeRecord() {
+    if (!upgradeRecord) return;
+    const { slot, type, draft } = upgradeRecord;
+    upgradeRecord = null;
+    editUpgradeItem(slot, item => {
+        if (type === 'starforce') item.stars = draft.stars;
+        if (type === 'cube') {
+            item.potTier = draft.potTier;
+            item.potLines = draft.potLines.map(l => ({ ...l }));
+        }
+        if (type === 'flame') {
+            item.flames = { ...draft.flames };
+            item.flameScore = UpgradeEngine.flameScore(item.flames, getActiveCharacter().upgradeBuild.className);
+        }
+    }, { forceUpgrade: true });
+}
+
+// Plan rows by key, so the recorder can read the row it was opened from.
+const upgradeRecordRows = new Map();
+
+function renderUpgradeRecorder(character, build) {
+    const E = UpgradeEngine;
+    const { slot, type, draft, rec } = upgradeRecord;
+    const item = build.items[slot];
+    if (!item) return '';
+    const cls = build.className;
+    const cs = E.classStats(cls);
+    const stats = upgradeStatsFor(character, build);
+    const pdr = characterUpgradeSettings(character).pdr;
+    const charLevel = getCharLevel(character);
+
+    // What the draft is worth against the item as it stands now.
+    const after = { ...item, stars: draft.stars, potTier: draft.potTier, potLines: draft.potLines, flames: draft.flames };
+    const restated = E.restatItem(stats, item, after, cls, charLevel);
+    const change = (E.damageIndex(restated, pdr) / E.damageIndex(stats, pdr) - 1) * 100;
+    const fmtChange = `${change >= 0 ? '+' : ''}${change.toFixed(2)}% FD`;
+
+    let body = '', check = '';
+    if (type === 'starforce') {
+        body = `
+            <div class="upg-line">
+                <span class="upg-sub upg-flame-label">Stars now</span>
+                <input class="upg-num upg-wide" type="number" min="0" max="30" value="${draft.stars}"
+                       onchange="setRecordField('stars', this.value)">
+                <span class="upg-sub">was ${item.stars}★. If it boomed, enter the star it was restored at.</span>
+            </div>`;
+    } else if (type === 'cube') {
+        const unitKey = rec.unitKey || E.targetUnit(slot, cls).key;
+        const unit = rec.unit || E.targetUnit(slot, cls).name;
+        const base = E.applyDelta(stats, E.negateDelta(E.linesDelta(item.potLines || [], cls, charLevel)));
+        const eq = E.lineEquivalent(base, unitKey, cls, charLevel, pdr);
+        const score = draft.potLines.reduce((a, l) => a + eq(E.parsePotentialLine(l, cls)), 0);
+        const met = rec.threshold === undefined || score + 1e-9 >= rec.threshold;
+        check = `<span class="${met ? 'upg-met' : 'upg-miss'}">${Math.floor(score)}% ${unit}
+            ${rec.threshold !== undefined ? (met ? `· meets ${rec.threshold}%+` : `· short of ${rec.threshold}%+`) : ''}</span>`;
+        body = `
+            <div class="upg-line">
+                <span class="upg-sub">Tier</span>
+                <select onchange="setRecordField('potTier', this.value)">
+                    ${['rare', 'epic', 'unique', 'legendary'].map(t => `<option ${t === draft.potTier ? 'selected' : ''}>${t}</option>`).join('')}
+                </select>
+            </div>
+            ${draft.potLines.map((line, i) => {
+                const choices = E.lineStatsForSlot(slot, cls);
+                if (!choices.includes(line.stat)) choices.unshift(line.stat);
+                const values = E.lineValuesFor(slot, item.level, line.stat);
+                if (line.stat !== 'other' && !values.includes(line.value)) values.unshift(line.value);
+                return `
+                <div class="upg-line">
+                    <span class="upg-sub">Line ${i + 1}</span>
+                    <select onchange="setRecordLine(${i}, 'stat', this.value)">
+                        ${choices.map(c => `<option value="${c}" ${c === line.stat ? 'selected' : ''}>${E.LINE_LABELS[c] || c}</option>`).join('')}
+                    </select>
+                    ${line.stat === 'other' ? '' : `
+                    <select onchange="setRecordLine(${i}, 'value', this.value)">
+                        ${values.map(v => `<option value="${v}" ${v === line.value ? 'selected' : ''}>${v}</option>`).join('')}
+                    </select>`}
+                </div>`;
+            }).join('')}`;
+    } else if (type === 'flame') {
+        const fields = cs.main === 'hp'
+            ? [['hp', 'HP'], [cs.sub, cs.sub.toUpperCase()], ['att', 'ATT']]
+            : [[cs.main, cs.main.toUpperCase()], [cs.sub, cs.sub.toUpperCase()],
+               [cs.magic ? 'matt' : 'att', cs.magic ? 'MATT' : 'ATT'], ['allStatPercent', 'All Stat %']];
+        if (slot === 'weapon') fields.push(['bossDamagePercent', 'Boss %'], ['damagePercent', 'Damage %']);
+        const score = E.flameScore(draft.flames, cls);
+        const met = rec.threshold === undefined || score >= rec.threshold;
+        check = `<span class="${met ? 'upg-met' : 'upg-miss'}">score ${score}
+            ${rec.threshold !== undefined ? (met ? `· meets ${rec.threshold}+` : `· short of ${rec.threshold}+`) : ''}</span>`;
+        body = fields.map(([k, label]) => `
+            <div class="upg-line">
+                <span class="upg-sub upg-flame-label">${label}</span>
+                <input class="upg-num upg-wide" type="number" value="${draft.flames[k] || ''}"
+                       onchange="setRecordFlame('${k}', this.value)">
+            </div>`).join('');
+    }
+
+    return `
+        <div class="upg-recorder">
+            <div class="upg-recorder-head">
+                <strong>Record what ${sanitizeInput(item.name)} hit</strong>
+                ${check}
+                <span class="upg-sub">${fmtChange} vs now</span>
+            </div>
+            ${body}
+            <div class="upg-recorder-actions">
+                <button class="save-btn" onclick="saveUpgradeRecord()">Save result</button>
+                <button class="prog-reset" onclick="cancelUpgradeRecord()">Cancel</button>
+                <span class="upg-sub">Saving updates the item and moves the stat sheet by the difference.</span>
+            </div>
+        </div>`;
+}
+
 function renderUpgradePlan(character, build) {
     if (!build.items || !Object.keys(build.items).length) return '';
     const stats = UpgradeEngine.normalizeStats(build.stats);
@@ -769,11 +948,15 @@ function renderUpgradePlan(character, build) {
                 <table class="prog-table upg-table">
                     <thead><tr>
                         <th>#</th><th>Upgrade</th><th>Type</th><th>Expected cost</th><th>FD gain</th>
-                        <th>Meso / 1% FD</th><th>Running FD</th><th>Running cost</th><th>Brings on pace</th>
+                        <th>Meso / 1% FD</th><th>Running FD</th><th>Running cost</th><th>Brings on pace</th><th></th>
                     </tr></thead>
                     <tbody>
-                    ${plan.map((r, i) => `
-                        <tr>
+                    ${plan.map((r, i) => {
+                        const key = `${r.slot}|${r.type}|${i}`;
+                        upgradeRecordRows.set(key, r);
+                        const open = upgradeRecord && upgradeRecord.key === key;
+                        return `
+                        <tr class="${open ? 'upg-open' : ''}">
                             <td>${i + 1}</td>
                             <td>${sanitizeInput(r.label)}${r.detail ? `<div class="upg-sub">${sanitizeInput(r.detail)}</div>` : ''}
                                 ${r.hits && r.hits.length ? `<div class="upg-hits">Most likely hits: ${r.hits.map(h => `<span>${sanitizeInput(h)}</span>`).join('')}</div>` : ''}</td>
@@ -784,7 +967,11 @@ function renderUpgradePlan(character, build) {
                             <td>+${r.cumFd.toFixed(2)}%</td>
                             <td>${fmtMeso(r.cumCost)}</td>
                             <td>${r.unlocks.map(e => `<span class="upg-unlock">${sanitizeInput(e.fullName)}</span>`).join(' ')}</td>
-                        </tr>`).join('')}
+                            <td><button class="upg-filter ${open ? 'active' : ''}"
+                                        onclick="openUpgradeRecord('${key}', '${r.slot}', '${r.type}', ${r.type === 'starforce' ? r.to : 'undefined'})">Update</button></td>
+                        </tr>
+                        ${open ? `<tr class="upg-editor-row"><td colspan="10">${renderUpgradeRecorder(character, build)}</td></tr>` : ''}`;
+                    }).join('')}
                     </tbody>
                 </table>
             </div>

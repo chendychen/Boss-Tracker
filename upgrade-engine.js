@@ -686,6 +686,7 @@
                     label: beat ? `Cube ${item.name} until it beats ${nowPct}% ${unit.name}`
                         : `Cube ${item.name} to ${th.threshold}%+ ${unit.name}`,
                     target: `${th.threshold}%+ ${unit.name}`, now: `${nowPct}% ${unit.name}`,
+                    threshold: th.threshold, unit: unit.name, unitKey: unit.key,
                     detail: `${cube.name}s · ${tierCost ? 'tier up, then ' : ''}~${Math.round(th.rolls)} cubes`
                         + ` · now ${nowPct}%, expect ~${Math.round(th.expect)}%`,
                     hits, cubes: th.rolls, cubeName: cube.name,
@@ -843,7 +844,7 @@
             type: 'flame', slot: item.slot,
             label: th.threshold <= now + 1 ? `Flame ${item.name} until it beats score ${now}`
                 : `Flame ${item.name} to score ${th.threshold}+`,
-            target: `score ${th.threshold}+`, now: `score ${now}`,
+            target: `score ${th.threshold}+`, now: `score ${now}`, threshold: th.threshold,
             detail: `~${Math.round(th.rolls)} meso resets, keeping the better roll · now ${now}, expect ~${Math.round(th.expect)}`,
             cost: th.rolls * price, fdGain: th.gain,
         }));
