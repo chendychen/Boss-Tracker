@@ -360,3 +360,67 @@ describe('class-aware line choices', () => {
         assert.equal(E.describeClass('Pathfinder'), 'DEX main · STR secondary · ATT');
     });
 });
+
+describe('readable targets', () => {
+    test('score thresholds count only scores above the current one', () => {
+        const outcomes = [
+            { score: 33, fd: 1.0, p: 0.1, lines: [] },
+            { score: 30, fd: 0.5, p: 0.2, lines: [] },
+            { score: 26, fd: -0.2, p: 0.7, lines: [] },
+        ];
+        const th = [...E.scoreThresholds(outcomes, { current: 27 })];
+        assert.deepEqual(th.map(t => t.threshold), [33, 30]);
+        near(th[1].rolls, 1 / 0.3);
+        near(th[1].gain, (0.1 * 1.0 + 0.2 * 0.5) / 0.3);
+        near(th[1].expect, (0.1 * 33 + 0.2 * 30) / 0.3);
+    });
+
+    test('line equivalents are in the target unit', () => {
+        const eq = E.lineEquivalent(SHEET, 'mainPct', 'Bowmaster', 285, 380);
+        near(eq({ stat: 'main%', value: 13 }), 13, 1e-9);
+        assert.ok(eq({ stat: 'all%', value: 10 }) > 10);   // all stat also raises STR
+        assert.ok(eq({ stat: 'sub%', value: 10 }) < 2);    // STR is a fraction of DEX
+    });
+
+    test('cube and flame rows name a target in stat % and flame score', () => {
+        const build = {
+            className: 'Bowmaster', stats: SHEET,
+            items: {
+                hat: { slot: 'hat', name: 'Hat', set: 'Eternal', level: 250, stars: 22, sfKind: 'ordinary',
+                    potTier: 'legendary', lineCount: 3, replacementCost: 2e9,
+                    potLines: [{ stat: 'dex%', value: 10 }, { stat: 'dex%', value: 10 }, { stat: 'other', value: 1 }],
+                    flames: { dex: 100, str: 40 } },
+            },
+        };
+        const recs = E.recommend(build, {}, { charLevel: 295 });
+        const cube = recs.find(r => r.type === 'cube');
+        assert.match(cube.label, /(to \d+%\+ DEX|until it beats \d+% DEX)$/);
+        assert.ok(cube.hits.length >= 1 && !/INT|LUK/.test(cube.hits.join(' ')));
+        const flame = recs.find(r => r.type === 'flame');
+        assert.match(flame.label, /score \d+/);
+        assert.match(flame.detail, /now 103, expect ~\d+/);
+    });
+});
+
+describe('cooldown hat', () => {
+    const build = {
+        className: 'Bowmaster', stats: SHEET,
+        items: {
+            hat: { slot: 'hat', name: 'Hat', set: 'Eternal', level: 250, stars: 22, sfKind: 'ordinary',
+                potTier: 'legendary', lineCount: 3, replacementCost: 2e9,
+                potLines: [{ stat: 'cdr', value: 2 }, { stat: 'dex%', value: 10 }, { stat: 'other', value: 1 }], flames: {} },
+        },
+    };
+
+    test('CDR lines are worth nothing for a class without a cooldown hat', () => {
+        const eq = E.lineEquivalent(E.normalizeStats({ ...SHEET, cdrValue: 0 }), 'mainPct', 'Bowmaster', 295, 380);
+        assert.equal(eq({ stat: 'cooldown', value: 2 }), 0);
+        assert.ok(!E.equivalenceLegend(build, { cdrValue: 0 }).armor.includes('CDR'));
+        assert.ok(E.equivalenceLegend(build, {}).armor.includes('CDR'));
+    });
+
+    test('without CDR value, cubing the hat never keeps a CDR line for its own sake', () => {
+        const hat = E.recommend(build, { cdrValue: 0 }, { charLevel: 295 }).filter(r => r.type === 'cube');
+        for (const r of hat) assert.ok(r.hits.every(h => !/^CDR/.test(h)), r.hits.join(' | '));
+    });
+});

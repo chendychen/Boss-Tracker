@@ -579,13 +579,78 @@
 
     const TIER_ORDER = ['rare', 'epic', 'unique', 'legendary'];
 
-    function describeLines(lines) {
-        const name = { 'main%': 'Main', 'sub%': 'Sub', 'all%': 'All', 'att%': 'ATT', boss: 'Boss', ied: 'IED',
-            dmg: 'Dmg', critDmg: 'CD', main: 'Main', att: 'ATT', mainPerLevel: 'Main/lv', cooldown: 'CDR' };
+    /** "DEX 13 / DEX 10 / All 7" in the class's own stat names. */
+    function describeLines(lines, className) {
+        const cs = classStats(className);
+        const name = {
+            'main%': STAT_NAMES[cs.main], 'sub%': STAT_NAMES[cs.sub], 'all%': 'All', 'att%': cs.magic ? 'MATT' : 'ATT',
+            boss: 'Boss', ied: 'IED', dmg: 'Dmg', critDmg: 'CD', main: STAT_NAMES[cs.main],
+            att: cs.magic ? 'MATT' : 'ATT', mainPerLevel: `${STAT_NAMES[cs.main]}/lv`, cooldown: 'CDR',
+        };
+        const pct = l => (l.stat === 'cooldown' ? 's' : /%$|boss|ied|dmg|critDmg/.test(l.stat) ? '' : ' flat');
         const useful = lines.filter(l => name[l.stat]);
-        if (!useful.length) return 'any';
-        return useful.map(l => `${name[l.stat]} ${l.value}${l.stat === 'cooldown' ? 's'
-            : /%$|boss|ied|dmg|critDmg/.test(l.stat) ? '%' : ''}`).join(' / ');
+        if (!useful.length) return 'nothing useful';
+        return useful.map(l => `${name[l.stat]} ${l.value}${pct(l)}`).join(' / ');
+    }
+
+    /**
+     * The unit a potential target is stated in, as players roll by it: main
+     * stat % on armor and accessories, ATT % (MATT %) on weapon, secondary and
+     * emblem, where boss and IED lines trade against attack.
+     */
+    function targetUnit(slot, className) {
+        const cs = classStats(className);
+        const wse = ['weapon', 'secondary', 'emblem'].includes(slot);
+        return wse ? { key: 'attPct', name: cs.magic ? 'MATT' : 'ATT' }
+            : { key: 'mainPct', name: STAT_NAMES[cs.main] };
+    }
+
+    /**
+     * What one line is worth in a unit (1% main stat or 1% ATT), measured on
+     * this character's own sheet: "All Stat 10%" might be 11.2% DEX. IED is
+     * valued per line; two IED lines stack slightly below the sum.
+     */
+    function lineEquivalent(stats, unitKey, className, charLevel, pdr) {
+        const per = fdGain(stats, { [unitKey]: 1 }, pdr) || 1;
+        const cache = new Map();
+        return line => {
+            const k = `${line.stat}:${line.value}`;
+            if (!cache.has(k)) cache.set(k, fdGain(stats, linesDelta([line], className, charLevel), pdr) / per);
+            return cache.get(k);
+        };
+    }
+
+    /**
+     * "Roll until the result scores at least t" for each whole-number t above
+     * the current score, where each outcome has a player-readable `score`.
+     * Gains are still exact FD. Each threshold carries the most likely
+     * outcomes that meet it, so the target can be shown as line sets to hope
+     * for. Outcomes need { score, fd, p, lines }.
+     */
+    function scoreThresholds(outcomes, { current = 0, step = 1, minGain = 0.01 } = {}) {
+        const sorted = outcomes.slice().sort((a, b) => b.score - a.score);
+        const res = [];
+        const top = [];
+        let p = 0, pf = 0, ps = 0;
+        for (let i = 0; i < sorted.length; i++) {
+            const o = sorted[i];
+            p += o.p;
+            pf += o.p * o.fd;
+            ps += o.p * o.score;
+            top.push(o);
+            top.sort((a, b) => b.p - a.p);
+            if (top.length > 3) top.pop();
+            const bin = Math.floor(o.score / step + 1e-9);
+            const next = sorted[i + 1];
+            if (next && Math.floor(next.score / step + 1e-9) === bin) continue;
+            const threshold = bin * step;
+            if (threshold <= current + 1e-9) break;
+            const gain = pf / p;
+            if (gain < minGain) continue;
+            res.push({ threshold, p, rolls: 1 / p, gain, expect: ps / p,
+                hits: top.map(t => ({ lines: t.lines, share: t.p / p })) });
+        }
+        return res;
     }
 
     function cubeOptions(item, ctx) {
@@ -594,6 +659,11 @@
         const pools = tables.cubePool(item.slot, item.level);
         if (!pools) return [];
         const current = item.potLines || [];
+        const unit = targetUnit(item.slot, ctx.className);
+        const base = applyDelta(ctx.stats, negateDelta(linesDelta(current, ctx.className, ctx.charLevel)));
+        const eq = lineEquivalent(base, unit.key, ctx.className, ctx.charLevel, ctx.pdr);
+        const scoreOf = lines => lines.reduce((a, l) => a + eq(parsePotentialLine(l, ctx.className)), 0);
+        const now = scoreOf(current);
         const out = [];
         for (const [key, cube] of Object.entries(tables.CUBES)) {
             const price = (ctx.settings[cube.priceKey] || 0) + tables.revealCost(item.level);
@@ -606,12 +676,19 @@
                 currentLines: current, lineCount: item.lineCount || 3, pools,
                 primeChance: cube.primeChance, limits: tables.CUBE_LIMITS, pdr: ctx.pdr,
             });
-            for (const th of cubeThresholds(outcomes)) {
+            outcomes.forEach(o => { o.score = scoreOf(o.lines); });
+            const nowPct = Math.floor(now);
+            for (const th of scoreThresholds(outcomes, { current: now })) {
+                const hits = th.hits.map(h => describeLines(h.lines, ctx.className));
+                const beat = th.threshold <= nowPct + 1;
                 out.push({
                     type: 'cube', slot: item.slot, cube: key,
-                    label: `Cube ${item.name} until ≥ +${th.threshold.toFixed(2)}%`,
+                    label: beat ? `Cube ${item.name} until it beats ${nowPct}% ${unit.name}`
+                        : `Cube ${item.name} to ${th.threshold}%+ ${unit.name}`,
+                    target: `${th.threshold}%+ ${unit.name}`, now: `${nowPct}% ${unit.name}`,
                     detail: `${cube.name}s · ${tierCost ? 'tier up, then ' : ''}~${Math.round(th.rolls)} cubes`
-                        + ` · e.g. ${describeLines(th.at)}`,
+                        + ` · now ${nowPct}%, expect ~${Math.round(th.expect)}%`,
+                    hits, cubes: th.rolls, cubeName: cube.name,
                     cost: tierCost + th.rolls * price, fdGain: th.gain,
                 });
             }
@@ -741,11 +818,16 @@
         const current = flameDelta(item.flames, ctx.className);
         const base = applyDelta(ctx.stats, negateDelta(current));
         const before = damageIndex(ctx.stats, ctx.pdr);
+        const hpMain = classStats(ctx.className).main === 'hp';
         const out = [];
         for (const { v, p } of dist.values()) {
             const delta = {};
             FIELDS.forEach((f, k) => { if (v[k]) delta[f] = v[k]; });
-            out.push({ fd: (damageIndex(applyDelta(base, delta), ctx.pdr) / before - 1) * 100, p, lines: [] });
+            // The same score flameScore() gives a finished flame, from the vector.
+            const [mainBase, subBase, att, mainPct, , boss, dmg] = v;
+            const score = (hpMain ? mainBase / 17.5 : mainBase) + subBase / 12 + 3 * att
+                + 10 * mainPct + 10 * (boss + dmg);
+            out.push({ fd: (damageIndex(applyDelta(base, delta), ctx.pdr) / before - 1) * 100, p, lines: [], score });
         }
         return out.sort((a, b) => b.fd - a.fd);
     }
@@ -755,14 +837,53 @@
         if (item.locked || !tables.FLAMEABLE_SLOTS.has(item.slot)) return [];
         const price = ctx.settings.flameReset || 0;
         if (!price) return [];
+        const now = flameScore(item.flames, ctx.className);
         const outcomes = flameOutcomes(item, ctx);
-        const out = cubeThresholds(outcomes).map(th => ({
+        const out = scoreThresholds(outcomes, { current: now }).map(th => ({
             type: 'flame', slot: item.slot,
-            label: `Flame ${item.name} until ≥ +${th.threshold.toFixed(2)}%`,
-            detail: `~${Math.round(th.rolls)} meso resets, keeping the better roll`,
+            label: th.threshold <= now + 1 ? `Flame ${item.name} until it beats score ${now}`
+                : `Flame ${item.name} to score ${th.threshold}+`,
+            target: `score ${th.threshold}+`, now: `score ${now}`,
+            detail: `~${Math.round(th.rolls)} meso resets, keeping the better roll · now ${now}, expect ~${Math.round(th.expect)}`,
             cost: th.rolls * price, fdGain: th.gain,
         }));
         return keepEfficientFrontier(out);
+    }
+
+    /**
+     * What common lines are worth for this character, in the units the plan's
+     * targets use, so a roll can be judged by eye.
+     */
+    function equivalenceLegend(build, settings = {}, { charLevel = 280 } = {}) {
+        const s = { ...DEFAULT_SETTINGS, ...settings };
+        const stats = normalizeStats({ ...build.stats, cdrValue: +s.cdrValue });
+        const pdr = +s.pdr || DEFAULT_PDR;
+        if (!damageIndex(stats, pdr)) return null;
+        const cs = classStats(build.className);
+        const cls = build.className;
+        const main = STAT_NAMES[cs.main], sub = STAT_NAMES[cs.sub], atk = cs.magic ? 'MATT' : 'ATT';
+        const fmt = v => (v >= 10 ? v.toFixed(0) : v.toFixed(1));
+        const eqMain = lineEquivalent(stats, 'mainPct', cls, charLevel, pdr);
+        const eqAtt = lineEquivalent(stats, 'attPct', cls, charLevel, pdr);
+        const armor = [
+            [`All Stat 10%`, eqMain({ stat: 'all%', value: 10 })],
+            [`${sub} 10%`, eqMain({ stat: 'sub%', value: 10 })],
+            ...(+s.cdrValue ? [['CDR 2s', eqMain({ stat: 'cooldown', value: 2 })]] : []),
+            ['Crit Dmg 8%', eqMain({ stat: 'critDmg', value: 8 })],
+        ];
+        const wse = [
+            ['Boss 40%', eqAtt({ stat: 'boss', value: 40 })],
+            ['IED 40%', eqAtt({ stat: 'ied', value: 40 })],
+            ['Dmg 13%', eqAtt({ stat: 'dmg', value: 13 })],
+            [`${main} 13%`, eqAtt({ stat: 'main%', value: 13 })],
+        ];
+        return {
+            armor: `${main}% targets: ` + armor.map(([n, v]) => `${n} ≈ ${fmt(v)}% ${main}`).join(' · '),
+            wse: `${atk}% targets: ` + wse.map(([n, v]) => `${n} ≈ ${fmt(v)}% ${atk}`).join(' · '),
+            flame: cs.main === 'hp'
+                ? `Flame score: HP ÷ 17.5 + ${sub} ÷ 12 + 3 × ${atk} + 10 × (boss + damage) %`
+                : `Flame score: ${main} + ${sub} ÷ 12 + 3 × ${atk} + 10 × all stat % + 10 × (boss + damage) %`,
+        };
     }
 
     // ── Ranking ─────────────────────────────────────────────────────────────
@@ -1100,7 +1221,7 @@
         collapsePool, cubeOutcomes, cubeThresholds,
         sfStep, sfSteps, sfDelta, flameOutcomes, recommend, buildPlan,
         flameScore, itemContribution, restatItem, lineStatsForSlot, lineValuesFor, LINE_LABELS,
-        describeClass, STAT_NAMES,
+        describeClass, STAT_NAMES, describeLines, targetUnit, lineEquivalent, scoreThresholds, equivalenceLegend,
         GEAR_CATALOG, STANDARD_SLOTS, newItem,
     });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

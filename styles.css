@@ -895,3 +895,15 @@ tr.upg-editor-row > td { background: var(--cds-layer-02); padding: var(--spacing
     font-family: inherit;
 }
 .upg-class .upg-sub { display: inline; }
+.upg-wide-note { flex-basis: 100%; margin: 0; }
+.upg-hits { font-size: 0.75rem; color: var(--cds-text-helper, #8d8d8d); margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.upg-hits span { background: rgba(138, 63, 252, 0.12); color: #d4bbff; padding: 1px 6px; white-space: nowrap; }
+.upg-legend {
+    font-size: 0.8rem;
+    color: var(--cds-text-secondary);
+    background: var(--cds-layer-02);
+    border-left: 3px solid var(--cds-interactive);
+    padding: var(--spacing-03) var(--spacing-04);
+    margin-bottom: var(--spacing-04);
+    display: flex; flex-direction: column; gap: 4px;
+}

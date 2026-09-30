@@ -6,6 +6,13 @@
 // Progression model) only when called, never at load time.
 
 let upgradeBuildFiles = null;        // listing of builds/ from the local server
+// Why the listing is empty when it is: 'file' (page opened as a file, which
+// cannot list a folder), 'server' (served by something other than
+// tools/save-server.mjs), or null when the listing is real.
+let upgradeBuildFilesProblem = null;
+// Build files from a folder picked in the browser, for when the page runs
+// without the server: file name -> File. Held for the session only.
+let upgradeLocalBuilds = null;
 let upgradeTypeFilter = 'all';       // all | starforce | cube | flame
 const UPGRADE_PLAN_ROWS = 25;
 
@@ -71,12 +78,24 @@ function renderUpgradesCharacterTabs() {
 
 /** Fetches the builds/ listing once per session (re-fetched on demand). */
 async function refreshUpgradeBuildFiles() {
-    if (!location.protocol.startsWith('http')) { upgradeBuildFiles = []; return; }
-    try {
-        const res = await fetch('api/builds', { cache: 'no-store' });
-        upgradeBuildFiles = res.ok ? (await res.json()).builds || [] : [];
-    } catch (e) {
+    upgradeBuildFilesProblem = null;
+    if (upgradeLocalBuilds) {
+        // A picked folder is a snapshot; picking it again is how it refreshes.
+        document.getElementById('upgradeBuildFolder')?.click();
+        return;
+    }
+    if (!location.protocol.startsWith('http')) {
         upgradeBuildFiles = [];
+        upgradeBuildFilesProblem = 'file';
+    } else {
+        try {
+            const res = await fetch('api/builds', { cache: 'no-store' });
+            if (!res.ok) throw new Error(res.status);
+            upgradeBuildFiles = (await res.json()).builds || [];
+        } catch (e) {
+            upgradeBuildFiles = [];
+            upgradeBuildFilesProblem = 'server';
+        }
     }
     if (activeMainTab === 'upgrades') renderUpgradesContent();
 }
@@ -120,8 +139,36 @@ function adoptUpgradeBuild(json, label) {
     renderUpgradesContent();
 }
 
+/**
+ * Takes the JSON files from a folder the user picked (the builds/ folder, or
+ * any other). Browsers can list a picked folder even when the page is opened
+ * as a file, which the server listing cannot do.
+ */
+function pickUpgradeBuildFolder(event) {
+    const picked = [...event.target.files].filter(f => f.name.toLowerCase().endsWith('.json'));
+    event.target.value = '';
+    if (!picked.length) {
+        alert('That folder has no .json build files.');
+        return;
+    }
+    upgradeLocalBuilds = new Map(picked.map(f => [f.name, f]));
+    upgradeBuildFiles = picked
+        .sort((a, b) => b.lastModified - a.lastModified)
+        .map(f => ({ file: f.name, modified: new Date(f.lastModified).toISOString() }));
+    upgradeBuildFilesProblem = null;
+    renderUpgradesContent();
+}
+
 async function importUpgradeBuildFromFolder(file) {
     if (!file) return;
+    if (upgradeLocalBuilds && upgradeLocalBuilds.has(file)) {
+        try {
+            adoptUpgradeBuild(JSON.parse(await upgradeLocalBuilds.get(file).text()), file);
+        } catch (e) {
+            alert(`${file} is not valid JSON.`);
+        }
+        return;
+    }
     try {
         const res = await fetch('builds/' + encodeURIComponent(file), { cache: 'no-store' });
         if (!res.ok) throw new Error(res.status);
@@ -328,7 +375,7 @@ const upgradeRecCache = new Map();
 
 function upgradeRecKey(character, build) {
     return JSON.stringify([character.id, build.stats, build.items, build.className,
-        upgradeSettings, getCharLevel(character)]);
+        characterUpgradeSettings(character), getCharLevel(character)]);
 }
 
 function hasCachedRecommendations(character, build) {
@@ -340,7 +387,7 @@ function cachedRecommendations(character, build) {
     const key = upgradeRecKey(character, build);
     const hit = upgradeRecCache.get(character.id);
     if (hit && hit.key === key) return hit.recs;
-    const recs = UpgradeEngine.recommend(build, upgradeSettings, { charLevel: getCharLevel(character) });
+    const recs = UpgradeEngine.recommend(build, characterUpgradeSettings(character), { charLevel: getCharLevel(character) });
     upgradeRecCache.set(character.id, { key, recs });
     return recs;
 }
@@ -446,8 +493,26 @@ function upgradeLinesWorth(stats, delta) {
     return base ? (UpgradeEngine.damageIndex(stats, upgradeSettings.pdr) / base - 1) * 100 : 0;
 }
 
-function upgradeStatsFor(build) {
-    return UpgradeEngine.normalizeStats({ ...build.stats, cdrValue: upgradeSettings.cdrValue });
+/**
+ * Account pricing with this character's own choices on top: a class that
+ * does not run a cooldown hat gets nothing from CDR lines.
+ */
+function characterUpgradeSettings(character) {
+    const usesCdr = !character || character.usesCdrHat !== false;
+    return usesCdr ? upgradeSettings : { ...upgradeSettings, cdrValue: 0 };
+}
+
+function setUpgradeUsesCdr(value) {
+    const character = getActiveCharacter();
+    if (!character) return;
+    character.usesCdrHat = !!value;
+    saveToLocalStorage();
+    renderUpgradesContent();
+}
+
+function upgradeStatsFor(character, build) {
+    return UpgradeEngine.normalizeStats({ ...build.stats,
+        cdrValue: characterUpgradeSettings(character).cdrValue });
 }
 
 function describeUpgradeLine(line) {
@@ -459,7 +524,7 @@ function describeUpgradeLine(line) {
 
 function renderUpgradeInventory(character, build) {
     const E = UpgradeEngine;
-    const stats = upgradeStatsFor(build);
+    const stats = upgradeStatsFor(character, build);
     const valued = !!E.damageIndex(stats);
     const items = build.items || {};
     const slots = [...E.STANDARD_SLOTS, ...Object.keys(items).filter(k => !E.STANDARD_SLOTS.includes(k))];
@@ -524,7 +589,7 @@ function renderUpgradeInventory(character, build) {
 function renderUpgradeItemEditor(character, build, slot, it) {
     const E = UpgradeEngine;
     const cs = E.classStats(build.className);
-    const stats = upgradeStatsFor(build);
+    const stats = upgradeStatsFor(character, build);
     const valued = !!E.damageIndex(stats);
     const exists = !!(build.items && build.items[slot]);
     const catalog = E.GEAR_CATALOG.map((g, i) => ({ g, i })).filter(({ g }) => g.slot === slot);
@@ -673,6 +738,7 @@ function renderUpgradePlan(character, build) {
     new Set(all.map(r => `${r.type}|${r.slot}`)).forEach(k => { const t = k.split('|')[0]; counts[t] += 1; });
     const recs = upgradeTypeFilter === 'all' ? all : all.filter(r => r.type === upgradeTypeFilter);
     const { plan, nextBoss, calibrated } = buildUpgradePlan(character, recs);
+    const legend = UpgradeEngine.equivalenceLegend(build, characterUpgradeSettings(character), { charLevel: getCharLevel(character) });
 
     const filterBtn = (type, label) => `
         <button class="upg-filter ${upgradeTypeFilter === type ? 'active' : ''}"
@@ -690,6 +756,11 @@ function renderUpgradePlan(character, build) {
                     ${filterBtn('flame', `Flames (${counts.flame})`)}
                 </div>
             </div>
+            ${legend ? `<div class="upg-legend">
+                <div><strong>Reading targets.</strong> Cube targets count every line in one stat, valued for this character: ${sanitizeInput(legend.armor)}.</div>
+                <div>${sanitizeInput(legend.wse)}.</div>
+                <div>${sanitizeInput(legend.flame)}. Meso resets keep the better roll, so "until it beats" means reroll until the score goes up.</div>
+            </div>` : ''}
             <p class="upg-note">Each row is the cheapest next step per 1% final damage, given the rows above it.
                 Star force steps continue from where the plan left the item; a second cube or flame row on an
                 item is the extra gain from rolling for a higher target. Filter counts are items, not rows.
@@ -704,7 +775,8 @@ function renderUpgradePlan(character, build) {
                     ${plan.map((r, i) => `
                         <tr>
                             <td>${i + 1}</td>
-                            <td>${sanitizeInput(r.label)}${r.detail ? `<div class="upg-sub">${sanitizeInput(r.detail)}</div>` : ''}</td>
+                            <td>${sanitizeInput(r.label)}${r.detail ? `<div class="upg-sub">${sanitizeInput(r.detail)}</div>` : ''}
+                                ${r.hits && r.hits.length ? `<div class="upg-hits">Most likely hits: ${r.hits.map(h => `<span>${sanitizeInput(h)}</span>`).join('')}</div>` : ''}</td>
                             <td><span class="upg-type upg-type-${r.type}">${typeLabel[r.type] || r.type}</span></td>
                             <td>${fmtMeso(r.cost)}</td>
                             <td class="upg-gain">+${r.fdGain.toFixed(2)}%</td>
@@ -743,6 +815,10 @@ function renderUpgradesContent() {
             </select>
             <span class="upg-sub">${cls ? UpgradeEngine.describeClass(cls)
                 : 'Pick a class so lines and stats match the character'}</span>
+            <label class="upg-check" title="Untick for classes that do not use a cooldown hat; CDR lines are then worth nothing">
+                <input type="checkbox" ${character.usesCdrHat !== false ? 'checked' : ''}
+                       onchange="setUpgradeUsesCdr(this.checked)"> Uses a cooldown hat
+            </label>
         </div>`;
     const source = character.upgradeBuild
         ? `${sanitizeInput(character.upgradeBuild.file || character.upgradeBuild.source)}
@@ -761,16 +837,25 @@ function renderUpgradesContent() {
                     <select id="upgradeBuildSelect">
                         ${files.length ? files.map(f => `<option value="${sanitizeInput(f.file)}"
                             ${character.upgradeBuild && character.upgradeBuild.file === f.file ? 'selected' : ''}>${sanitizeInput(f.file)}</option>`).join('')
-                            : '<option value="">builds/ is empty</option>'}
+                            : `<option value="">${upgradeBuildFilesProblem ? 'builds/ unavailable' : 'builds/ is empty'}</option>`}
                     </select>
                     <button class="save-btn" onclick="importUpgradeBuildFromFolder(document.getElementById('upgradeBuildSelect').value)"
                             ${files.length ? '' : 'disabled'}>Import from builds/</button>
                     <button class="copy-character-btn" onclick="refreshUpgradeBuildFiles()">↻</button>
+                    <button class="import-btn" onclick="document.getElementById('upgradeBuildFolder').click()"
+                            title="Pick the builds folder; works without the local server">Open builds folder…</button>
+                    <input type="file" id="upgradeBuildFolder" webkitdirectory multiple style="display:none"
+                           onchange="pickUpgradeBuildFolder(event)">
                     <button class="import-btn" onclick="document.getElementById('upgradeBuildFile').click()">Open file…</button>
                     ${character.upgradeBuild ? '' : '<button class="add-character-btn" onclick="startBlankUpgradeBuild()">Enter gear by hand</button>'}
                     <input type="file" id="upgradeBuildFile" accept=".json" style="display:none"
                            onchange="importUpgradeBuildFromFile(event)">
                 </div>
+                ${upgradeBuildFilesProblem ? `<div class="upg-stale upg-wide-note"><span>${upgradeBuildFilesProblem === 'file'
+                    ? 'This page was opened as a file, which cannot list the builds/ folder (or read and write saves/).'
+                    : 'This page is not served by the tracker\'s own server, so the builds/ folder cannot be listed.'}
+                    Use <strong>Open builds folder…</strong> and pick the project's builds folder instead,
+                    or run <code>npm start</code> and open <code>http://127.0.0.1:8777</code>.</span></div>` : ''}
             </div>
             ${renderUpgradePlan(character, build)}
             ${renderUpgradeStats(character, build)}
