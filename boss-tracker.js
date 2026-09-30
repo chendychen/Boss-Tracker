@@ -298,7 +298,8 @@ function serializeCharacter(char) {
         ied: (char.ied === null || char.ied === undefined) ? null : char.ied,
         upgradeBuild: char.upgradeBuild || null,
         className: char.className || (char.upgradeBuild && char.upgradeBuild.className) || null,
-        usesCdrHat: char.usesCdrHat !== false
+        usesCdrHat: char.usesCdrHat !== false,
+        cdrCurve: Array.isArray(char.cdrCurve) && char.cdrCurve.length ? char.cdrCurve : null
     };
 }
 
@@ -342,7 +343,8 @@ function deserializeCharacter(char) {
         ied: (char.ied === null || char.ied === undefined) ? null : char.ied,
         upgradeBuild: char.upgradeBuild || null,
         className: char.className || (char.upgradeBuild && char.upgradeBuild.className) || null,
-        usesCdrHat: char.usesCdrHat !== false
+        usesCdrHat: char.usesCdrHat !== false,
+        cdrCurve: Array.isArray(char.cdrCurve) && char.cdrCurve.length ? char.cdrCurve : null
     };
 }
 

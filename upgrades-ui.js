@@ -545,7 +545,33 @@ function upgradeLinesWorth(stats, delta) {
  */
 function characterUpgradeSettings(character) {
     const usesCdr = !character || character.usesCdrHat !== false;
-    return usesCdr ? upgradeSettings : { ...upgradeSettings, cdrValue: 0 };
+    if (!usesCdr) return { ...upgradeSettings, cdrValue: 0, cdrCurve: null };
+    return { ...upgradeSettings, cdrCurve: characterCdrCurve(character) };
+}
+
+/** The character's own cooldown curve, else its class preset, else none. */
+function characterCdrCurve(character) {
+    if (!character) return null;
+    if (Array.isArray(character.cdrCurve) && character.cdrCurve.length) return character.cdrCurve;
+    return UpgradeEngine.CDR_CURVES[getCharClass(character)] || null;
+}
+
+/**
+ * Sets a character's cooldown curve from "20, 21, 47, 75": main stat % at
+ * 1, 2, 3, ... seconds of total CDR (0s is always 0). Blank goes back to the
+ * class preset, or the flat per-second value when the class has none.
+ */
+function setUpgradeCdrCurve(value) {
+    const character = getActiveCharacter();
+    if (!character) return;
+    const nums = String(value).split(/[\s,]+/).filter(Boolean).map(Number);
+    if (nums.some(v => !isFinite(v) || v < 0)) {
+        alert('Enter numbers separated by commas, e.g. 20, 21, 47, 75');
+        return;
+    }
+    character.cdrCurve = nums.length ? [0, ...nums] : null;
+    saveToLocalStorage();
+    renderUpgradesContent();
 }
 
 function setUpgradeUsesCdr(value) {
@@ -557,8 +583,7 @@ function setUpgradeUsesCdr(value) {
 }
 
 function upgradeStatsFor(character, build) {
-    return UpgradeEngine.normalizeStats({ ...build.stats,
-        cdrValue: characterUpgradeSettings(character).cdrValue });
+    return UpgradeEngine.analysisStats(build, characterUpgradeSettings(character));
 }
 
 /** "DEX 102 · STR 42 · All 6%" for a flame's stats that matter to the class. */
@@ -909,8 +934,7 @@ function renderUpgradeRecorder(character, build) {
         const weight = characterUpgradeSettings(character).iedWeight;
         const weigh = l => E.weighIed(l, cls, weight);
         const base = E.applyDelta(stats, E.negateDelta(E.linesDelta((item.potLines || []).map(weigh), cls, charLevel)));
-        const eq = E.lineEquivalent(base, unitKey, cls, charLevel, pdr);
-        const score = draft.potLines.reduce((a, l) => a + eq(weigh(l)), 0);
+        const score = E.lineSetScorer(base, unitKey, cls, charLevel, pdr)(draft.potLines.map(weigh));
         const met = rec.threshold === undefined || score + 1e-9 >= rec.threshold;
         check = `<span class="${met ? 'upg-met' : 'upg-miss'}">${Math.floor(score)}% ${unit}
             ${rec.threshold !== undefined ? (met ? `· meets ${rec.threshold}%+` : `· short of ${rec.threshold}%+`) : ''}</span>`;
@@ -1100,6 +1124,19 @@ function renderUpgradesContent() {
                 <input type="checkbox" ${character.usesCdrHat !== false ? 'checked' : ''}
                        onchange="setUpgradeUsesCdr(this.checked)"> Uses a cooldown hat
             </label>
+            ${character.usesCdrHat !== false ? (() => {
+                const curve = characterCdrCurve(character);
+                const own = Array.isArray(character.cdrCurve) && character.cdrCurve.length;
+                const preset = !own && curve;
+                const main = cls ? UpgradeEngine.STAT_NAMES[UpgradeEngine.classStats(cls).main] : 'main stat';
+                return `<label class="upg-check upg-curve" title="Main stat % that 1s, 2s, 3s... of total hat CDR is worth. Blank = class preset or a flat ${upgradeSettings.cdrValue}% FD per second.">
+                    CDR curve (${main} % at 1s, 2s, …)
+                    <input type="text" value="${curve ? curve.slice(1).join(', ') : ''}"
+                           placeholder="flat ${upgradeSettings.cdrValue}% FD per second"
+                           onchange="setUpgradeCdrCurve(this.value)">
+                    ${preset ? '<span class="upg-sub">class preset</span>' : ''}
+                </label>`;
+            })() : ''}
         </div>`;
     const source = character.upgradeBuild
         ? `${sanitizeInput(character.upgradeBuild.file || character.upgradeBuild.source)}

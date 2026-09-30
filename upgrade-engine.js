@@ -28,6 +28,7 @@
         sfProtectionPitched: '4444',
         sfMaxStar: 22,             // target cap for items without their own
         mvpDiscount: 0,            // % off star force up to 16→17★ (Silver 3, Gold 5, Diamond 10)
+        cdrCurve: null,            // per-character cooldown curve (see CDR_CURVES); null = linear cdrValue
         cdrValue: 0.7,             // % final damage per second of hat cooldown reduction
         // How much IED lines count when choosing cube targets: 0 ignores them,
         // 1 is their full damage value. Stacked IED has sharply diminishing
@@ -63,8 +64,23 @@
             // no place in the damage formula, so it is valued as the extra
             // skill uptime it buys: 0.7% per second is the common estimate.
             cdrValue: s.cdrValue === undefined ? 0.7 : n(s.cdrValue),
+            // A class's cooldown curve, when it has one: main stat % worth of
+            // 0, 1, 2, ... seconds of total hat CDR. Replaces cdrValue.
+            cdrCurve: Array.isArray(s.cdrCurve) && s.cdrCurve.length ? s.cdrCurve.map(n) : null,
             model: s.model === 'hp' ? 'hp' : 'normal',
         };
+    }
+
+    /**
+     * Main stat % a cooldown curve gives at `seconds` of total CDR, clamped to
+     * the curve's ends and interpolated between whole seconds.
+     */
+    function cdrCurveAt(curve, seconds) {
+        if (!curve || !curve.length) return 0;
+        const t = Math.max(0, Math.min(curve.length - 1, seconds));
+        const i = Math.floor(t);
+        const f = t - i;
+        return i + 1 < curve.length ? curve[i] + f * (curve[i + 1] - curve[i]) : curve[i];
     }
 
     /**
@@ -73,7 +89,10 @@
      */
     function damageIndex(stats, pdr = DEFAULT_PDR) {
         const s = normalizeStats(stats);
-        const main = s.mainBase * (1 + s.mainPct / 100) + s.mainFlat;
+        // A cooldown curve is stated in main stat %, so it joins the stat %;
+        // without one, cooldown is a flat final damage multiplier.
+        const curvePct = s.cdrCurve ? cdrCurveAt(s.cdrCurve, s.cdr) : 0;
+        const main = s.mainBase * (1 + (s.mainPct + curvePct) / 100) + s.mainFlat;
         const sub = s.subBase * (1 + s.subPct / 100) + s.subFlat;
         // Demon Avenger converts HP: 1 stat per 3.5 HP, at 80% for HP above its
         // pure (AP) HP. Pure HP is a small share of a bossing DA's total, so all
@@ -84,7 +103,7 @@
         const critMult = 1.35 + s.critDmg / 100;
         const defMult = Math.max(0, 1 - (pdr / 100) * (1 - s.ied / 100));
         const fdMult = 1 + s.fd / 100;
-        const cdrMult = 1 + (s.cdr * s.cdrValue) / 100;
+        const cdrMult = s.cdrCurve ? 1 : 1 + (s.cdr * s.cdrValue) / 100;
         return statValue * attack * dmgMult * critMult * defMult * fdMult * cdrMult;
     }
 
@@ -108,7 +127,7 @@
                     remaining = line > 0 ? remaining * f : remaining / f;
                 }
                 out.ied = 100 * (1 - remaining);
-            } else if (v && k in out && k !== 'model' && k !== 'cdrValue') {
+            } else if (v && k in out && !['model', 'cdrValue', 'cdrCurve'].includes(k)) {
                 out[k] += v;
             }
         }
@@ -179,6 +198,14 @@
         const also = cs.also.length ? ` (+${cs.also.map(k => STAT_NAMES[k]).join(', ')})` : '';
         return `${STAT_NAMES[cs.main]} main · ${STAT_NAMES[cs.sub]}${also} secondary · ${cs.magic ? 'MATT' : 'ATT'}`;
     }
+
+    // Cooldown curves by class: main stat % worth of total hat CDR at 0, 1, 2,
+    // ... seconds. Cooldown pays off at skill breakpoints, so the value is far
+    // from linear. Pathfinder's is the community efficiency chart the user
+    // supplied (2026-10-01).
+    const CDR_CURVES = {
+        Pathfinder: [0, 20, 21, 47, 75, 76, 78, 80],
+    };
 
     function classStats(className) {
         return CLASS_STATS[className] || { main: 'str', sub: 'dex', magic: false, also: [] };
@@ -638,6 +665,22 @@
     }
 
     /**
+     * Scores a whole roll in the unit: what all its lines together are worth.
+     * Lines do not simply add: cooldown follows a class curve (2s + 1s is the
+     * 3s value, not the 2s and 1s values summed) and IED stacks.
+     */
+    function lineSetScorer(stats, unitKey, className, charLevel, pdr) {
+        const per = fdGain(stats, { [unitKey]: 1 }, pdr) || 1;
+        const cache = new Map();
+        return lines => {
+            const parsed = lines.map(l => parsePotentialLine(l, className));
+            const k = parsed.map(l => `${l.stat}:${l.value}`).sort().join('|');
+            if (!cache.has(k)) cache.set(k, fdGain(stats, linesDelta(parsed, className, charLevel), pdr) / per);
+            return cache.get(k);
+        };
+    }
+
+    /**
      * "Roll until the result scores at least t" for each whole-number t above
      * the current score, where each outcome has a player-readable `score`.
      * Gains are still exact FD. Each threshold carries the most likely
@@ -683,8 +726,7 @@
         const current = (item.potLines || []).map(weigh);
         const unit = targetUnit(item.slot, ctx.className);
         const base = applyDelta(ctx.stats, negateDelta(linesDelta(current, ctx.className, ctx.charLevel)));
-        const eq = lineEquivalent(base, unit.key, ctx.className, ctx.charLevel, ctx.pdr);
-        const scoreOf = lines => lines.reduce((a, l) => a + eq(parsePotentialLine(l, ctx.className)), 0);
+        const scoreOf = lineSetScorer(base, unit.key, ctx.className, ctx.charLevel, ctx.pdr);
         const now = scoreOf(current);
         const out = [];
         for (const [key, cube] of Object.entries(tables.CUBES)) {
@@ -873,13 +915,40 @@
         return keepEfficientFrontier(out);
     }
 
+    /** Total seconds of skill cooldown on a build's potential lines. */
+    function gearCdr(items, className) {
+        let total = 0;
+        for (const item of Object.values(items || {})) {
+            for (const line of item.potLines || []) {
+                const l = parsePotentialLine(line, className);
+                if (l.stat === 'cooldown') total += l.value;
+            }
+        }
+        return total;
+    }
+
+    /**
+     * The sheet every valuation starts from: the stat sheet, with the CDR the
+     * gear actually carries (the stat window does not show it, and a curve
+     * needs it) and the character's cooldown valuation.
+     */
+    function analysisStats(build, settings = {}) {
+        const s = { ...DEFAULT_SETTINGS, ...settings };
+        return normalizeStats({
+            ...build.stats,
+            cdr: gearCdr(build.items, build.className),
+            cdrValue: +s.cdrValue,
+            cdrCurve: s.cdrCurve || null,
+        });
+    }
+
     /**
      * What common lines are worth for this character, in the units the plan's
      * targets use, so a roll can be judged by eye.
      */
     function equivalenceLegend(build, settings = {}, { charLevel = 280 } = {}) {
         const s = { ...DEFAULT_SETTINGS, ...settings };
-        const stats = normalizeStats({ ...build.stats, cdrValue: +s.cdrValue });
+        const stats = analysisStats(build, s);
         const pdr = +s.pdr || DEFAULT_PDR;
         if (!damageIndex(stats, pdr)) return null;
         const cs = classStats(build.className);
@@ -891,7 +960,7 @@
         const armor = [
             [`All Stat 10%`, eqMain({ stat: 'all%', value: 10 })],
             [`${sub} 10%`, eqMain({ stat: 'sub%', value: 10 })],
-            ...(+s.cdrValue ? [['CDR 2s', eqMain({ stat: 'cooldown', value: 2 })]] : []),
+            ...(!s.cdrCurve && +s.cdrValue ? [['CDR 2s', eqMain({ stat: 'cooldown', value: 2 })]] : []),
             ['Crit Dmg 8%', eqMain({ stat: 'critDmg', value: 8 })],
         ];
         const wse = [
@@ -901,8 +970,11 @@
             ['Dmg 13%', eqAtt({ stat: 'dmg', value: 13 })],
             [`${main} 13%`, eqAtt({ stat: 'main%', value: 13 })],
         ];
+        const curve = s.cdrCurve && s.cdrCurve.length
+            ? ` · CDR by total seconds on gear: ${s.cdrCurve.slice(1).map((v, i) => `${i + 1}s ${fmt(+v)}%`).join(', ')}`
+                + ` (now ${stats.cdr}s)` : '';
         return {
-            armor: `${main}% targets: ` + armor.map(([n, v]) => `${n} ≈ ${fmt(v)}% ${main}`).join(' · '),
+            armor: `${main}% targets: ` + armor.map(([n, v]) => `${n} ≈ ${fmt(v)}% ${main}`).join(' · ') + curve,
             wse: `${atk}% targets: ` + wse.map(([n, v]) => `${n} ≈ ${fmt(v)}% ${atk}`).join(' · ')
                 + (+s.iedWeight > 0 ? '' : ' · IED lines count as junk'),
             flame: cs.main === 'hp'
@@ -921,7 +993,7 @@
     function recommend(build, settings = {}, { charLevel = 280 } = {}) {
         const s = { ...DEFAULT_SETTINGS, ...settings };
         const ctx = {
-            stats: normalizeStats({ ...build.stats, cdrValue: +s.cdrValue }), className: build.className,
+            stats: analysisStats(build, s), className: build.className,
             charLevel, settings: s, pdr: +s.pdr || DEFAULT_PDR,
             iedWeight: Math.max(0, Math.min(1, +s.iedWeight || 0)),
         };
@@ -1247,7 +1319,7 @@
         collapsePool, cubeOutcomes, cubeThresholds,
         sfStep, sfSteps, sfDelta, flameOutcomes, recommend, buildPlan,
         flameScore, itemContribution, restatItem, lineStatsForSlot, lineValuesFor, LINE_LABELS,
-        describeClass, STAT_NAMES, describeLines, weighIed, targetUnit, lineEquivalent, scoreThresholds, equivalenceLegend,
+        describeClass, STAT_NAMES, describeLines, weighIed, lineSetScorer, CDR_CURVES, cdrCurveAt, gearCdr, analysisStats, targetUnit, lineEquivalent, scoreThresholds, equivalenceLegend,
         GEAR_CATALOG, STANDARD_SLOTS, newItem,
     });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -457,3 +457,36 @@ describe('IED in cube targets', () => {
         assert.ok(E.restatItem(build.stats, before, after, 'Bowmaster', 295).ied < 95);
     });
 });
+
+describe('cooldown curves', () => {
+    const curve = E.CDR_CURVES.Pathfinder;
+    const hat = lines => ({ slot: 'hat', name: 'Hat', level: 250, potLines: lines });
+    const build = { className: 'Pathfinder', stats: SHEET,
+        items: { hat: hat([{ stat: 'cdr', value: 2 }, { stat: 'dex%', value: 10 }]) } };
+
+    test('the curve interpolates and clamps', () => {
+        assert.equal(E.cdrCurveAt(curve, 0), 0);
+        assert.equal(E.cdrCurveAt(curve, 3), 47);
+        assert.equal(E.cdrCurveAt(curve, 2.5), 34);
+        assert.equal(E.cdrCurveAt(curve, 12), 80);
+    });
+
+    test('gear CDR comes from the potential lines, not the stat window', () => {
+        assert.equal(E.analysisStats(build, { cdrCurve: curve }).cdr, 2);
+    });
+
+    test('whole rolls score on the curve: the chart examples', () => {
+        const st = E.analysisStats(build, { cdrCurve: curve });
+        const bare = E.applyDelta(st, E.negateDelta(E.linesDelta(build.items.hat.potLines, 'Pathfinder', 285)));
+        const score = E.lineSetScorer(bare, 'mainPct', 'Pathfinder', 285, 380);
+        near(score([{ stat: 'cdr', value: 2 }, { stat: 'cdr', value: 1 }]), 47, 1e-9);
+        near(score([{ stat: 'cdr', value: 2 }, { stat: 'cdr', value: 1 }, { stat: 'dex%', value: 10 }]), 57, 1e-9);
+        near(score([{ stat: 'cdr', value: 2 }, { stat: 'cdr', value: 2 }]), 75, 1e-9);
+    });
+
+    test('without a curve cooldown stays a flat FD multiplier', () => {
+        const st = E.analysisStats(build, {});
+        assert.equal(st.cdrCurve, null);
+        near(E.fdGain(st, { cdr: 1 }), 0.7 / 1.014 , 1e-6);   // 2s -> 3s at 0.7% FD per second
+    });
+});
