@@ -1206,11 +1206,13 @@ function renderCrystalChecklist(counted) {
         .filter(c => c.bosses.length);
     if (!byCharacter.length) return '';
 
-    let doneTotal = 0;
+    let doneTotal = 0, earned = 0;
     const columns = byCharacter.map(({ char, bosses }) => {
         const done = getCrystalsDone(char);
-        const finished = bosses.filter(b => done.has(b.baseName)).length;
+        const finishedBosses = bosses.filter(b => done.has(b.baseName));
+        const finished = finishedBosses.length;
         doneTotal += finished;
+        earned += finishedBosses.reduce((sum, b) => sum + b.adjustedValue, 0);
         const complete = finished === bosses.length;
         const rows = complete ? '' : bosses.map(b => {
             const isDone = done.has(b.baseName);
@@ -1238,11 +1240,13 @@ function renderCrystalChecklist(counted) {
 
     const total = counted.length;
     const pct = total ? (doneTotal / total) * 100 : 0;
+    const potential = counted.reduce((sum, b) => sum + b.adjustedValue, 0);
     return `
         <div class="sell-tracker">
             <div class="sell-tracker-head">
                 <h3>This week's crystals</h3>
                 <span class="sell-total">Total done ${doneTotal}/${total}</span>
+                <span class="sell-earned">${formatValue(earned)} <span class="sell-of">/ ${formatValue(potential)} earned</span></span>
                 <span class="sell-week">Resets Thursday 00:00 UTC · week of ${currentCrystalWeek()}</span>
             </div>
             <div class="sell-progress"><div style="width: ${pct.toFixed(1)}%"></div></div>

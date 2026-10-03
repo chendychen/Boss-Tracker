@@ -982,3 +982,5 @@ tr.upg-editor-row > td { background: var(--cds-layer-02); padding: var(--spacing
 .sell-state { color: #8d8d8d; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sell-done .sell-boss-name { color: #8d8d8d; text-decoration: line-through; }
 .sell-done .sell-state { color: #42be65; font-weight: 600; }
+.sell-earned { color: #42be65; font-weight: 700; font-size: 1.1em; font-variant-numeric: tabular-nums; }
+.sell-of { color: #8d8d8d; font-weight: 400; font-size: 0.85em; }
