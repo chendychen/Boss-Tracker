@@ -239,7 +239,8 @@ function serializeCharacter(char) {
         upgradeBuild: char.upgradeBuild || null,
         className: char.className || (char.upgradeBuild && char.upgradeBuild.className) || null,
         usesCdrHat: char.usesCdrHat !== false,
-        cdrCurve: Array.isArray(char.cdrCurve) && char.cdrCurve.length ? char.cdrCurve : null
+        cdrCurve: Array.isArray(char.cdrCurve) && char.cdrCurve.length ? char.cdrCurve : null,
+        crystalsDone: char.crystalsDone || null
     };
 }
 
@@ -284,7 +285,8 @@ function deserializeCharacter(char) {
         upgradeBuild: char.upgradeBuild || null,
         className: char.className || (char.upgradeBuild && char.upgradeBuild.className) || null,
         usesCdrHat: char.usesCdrHat !== false,
-        cdrCurve: Array.isArray(char.cdrCurve) && char.cdrCurve.length ? char.cdrCurve : null
+        cdrCurve: Array.isArray(char.cdrCurve) && char.cdrCurve.length ? char.cdrCurve : null,
+        crystalsDone: char.crystalsDone || null
     };
 }
 
@@ -1120,6 +1122,134 @@ function renderAll() {
     renderActiveTab();
 }
 
+const CRYSTALS_PER_CHARACTER = 14;
+const CRYSTALS_PER_ACCOUNT = 180;
+
+/**
+ * Which crystals count this week. Each character sells at most its 14 most
+ * valuable, and the account at most 180, taken from those per-character
+ * picks by value. Everything else is overflow to drop.
+ * @returns {{counted: object[], overflow: object[], accountLimitHit: boolean}}
+ */
+function crystalSalePlan() {
+    const all = getAllBossesWithValues();   // sorted by adjusted value, highest first
+    const perCharacter = new Map();
+    const eligible = [];
+    const overflow = [];
+    all.forEach(b => {
+        const n = perCharacter.get(b.characterId) || 0;
+        if (n < CRYSTALS_PER_CHARACTER) {
+            perCharacter.set(b.characterId, n + 1);
+            eligible.push(b);
+        } else {
+            overflow.push({ ...b, reason: 'character' });
+        }
+    });
+    eligible.slice(CRYSTALS_PER_ACCOUNT).forEach(b => overflow.push({ ...b, reason: 'account' }));
+    return {
+        counted: eligible.slice(0, CRYSTALS_PER_ACCOUNT),
+        overflow,
+        accountLimitHit: eligible.length > CRYSTALS_PER_ACCOUNT,
+    };
+}
+
+/**
+ * The current crystal week, keyed by the date of its start. GMS resets weekly
+ * bosses and crystal sales at Thursday 00:00 UTC.
+ */
+function currentCrystalWeek(now = new Date()) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const sinceThursday = (d.getUTCDay() - 4 + 7) % 7;
+    d.setUTCDate(d.getUTCDate() - sinceThursday);
+    return d.toISOString().slice(0, 10);
+}
+
+/** Bosses a character has finished this week; last week's ticks no longer count. */
+function getCrystalsDone(character) {
+    const done = character.crystalsDone;
+    return new Set(done && done.week === currentCrystalWeek() ? done.bosses : []);
+}
+
+function setCrystalsDone(character, bosses) {
+    character.crystalsDone = { week: currentCrystalWeek(), bosses: Array.from(bosses) };
+    saveToLocalStorage();
+    renderSellingStrategy();
+}
+
+function toggleCrystalDone(characterId, baseName) {
+    const character = characters.find(c => c.id === characterId);
+    if (!character) return;
+    const done = getCrystalsDone(character);
+    if (done.has(baseName)) done.delete(baseName); else done.add(baseName);
+    setCrystalsDone(character, done);
+}
+
+function finishAllCrystals(characterId) {
+    const character = characters.find(c => c.id === characterId);
+    if (!character) return;
+    const counted = crystalSalePlan().counted.filter(b => b.characterId === characterId);
+    setCrystalsDone(character, new Set([...getCrystalsDone(character), ...counted.map(b => b.baseName)]));
+}
+
+function resetCrystalsDone(characterId) {
+    const character = characters.find(c => c.id === characterId);
+    if (character) setCrystalsDone(character, []);
+}
+
+/**
+ * Weekly checklist of the crystals that count, one column per character.
+ * A character whose bosses are all finished collapses to its header.
+ */
+function renderCrystalChecklist(counted) {
+    const byCharacter = characters
+        .map(char => ({ char, bosses: counted.filter(b => b.characterId === char.id) }))
+        .filter(c => c.bosses.length);
+    if (!byCharacter.length) return '';
+
+    let doneTotal = 0;
+    const columns = byCharacter.map(({ char, bosses }) => {
+        const done = getCrystalsDone(char);
+        const finished = bosses.filter(b => done.has(b.baseName)).length;
+        doneTotal += finished;
+        const complete = finished === bosses.length;
+        const rows = complete ? '' : bosses.map(b => {
+            const isDone = done.has(b.baseName);
+            return `
+                <button class="sell-boss ${isDone ? 'sell-done' : ''}"
+                        onclick="toggleCrystalDone(${char.id}, '${b.baseName.replace(/'/g, "\\'")}')">
+                    ${renderBossIcon(b.baseName, b.difficulty, 'boss-icon-sm')}
+                    <span class="sell-boss-name">${sanitizeInput(`${b.difficulty === 'Solo' ? '' : b.difficulty + ' '}${b.baseName}`)}${b.partyCount > 1 ? ` <span class="sell-party">×${b.partyCount}</span>` : ''}</span>
+                    <span class="sell-state">${isDone ? 'Finished' : formatValue(b.adjustedValue)}</span>
+                </button>`;
+        }).join('');
+        return `
+            <div class="sell-col ${complete ? 'sell-complete' : ''}">
+                <div class="sell-col-head">
+                    <span class="sell-col-name">${sanitizeInput(char.name)}</span>
+                    <span class="sell-count">${finished}/${bosses.length}</span>
+                    ${complete
+                        ? `<span class="sell-all-done">All finished</span>
+                           <button class="sell-link" onclick="resetCrystalsDone(${char.id})">Undo</button>`
+                        : `<button class="sell-finish" onclick="finishAllCrystals(${char.id})">Finish all</button>`}
+                </div>
+                ${rows ? `<div class="sell-list">${rows}</div>` : ''}
+            </div>`;
+    }).join('');
+
+    const total = counted.length;
+    const pct = total ? (doneTotal / total) * 100 : 0;
+    return `
+        <div class="sell-tracker">
+            <div class="sell-tracker-head">
+                <h3>This week's crystals</h3>
+                <span class="sell-total">Total done ${doneTotal}/${total}</span>
+                <span class="sell-week">Resets Thursday 00:00 UTC · week of ${currentCrystalWeek()}</span>
+            </div>
+            <div class="sell-progress"><div style="width: ${pct.toFixed(1)}%"></div></div>
+            <div class="sell-grid">${columns}</div>
+        </div>`;
+}
+
 function renderSellingStrategy() {
     const container = document.getElementById('sellingStrategyContent');
 
@@ -1128,27 +1258,14 @@ function renderSellingStrategy() {
         return;
     }
 
-    const allBosses = getAllBossesWithValues(); // sorted by adjustedValue desc
-    const globalLimitHit = allBosses.length > 180;
-
-    // Build a set of overflow boss keys: "characterId:baseName"
-    const overflowKeys = new Set();
-    if (globalLimitHit) {
-        allBosses.slice(180).forEach(b => overflowKeys.add(`${b.characterId}:${b.baseName}`));
-    } else {
-        // Per-character: bosses ranked 15+ for each character
-        characters.forEach(char => {
-            const charBosses = allBosses.filter(b => b.characterId === char.id);
-            charBosses.slice(14).forEach(b => overflowKeys.add(`${b.characterId}:${b.baseName}`));
-        });
-    }
-
-    const limitLabel = globalLimitHit ? 'global 180-crystal limit' : 'per-character 14-crystal limit';
+    const { counted, overflow, accountLimitHit } = crystalSalePlan();
+    const limitLabel = accountLimitHit
+        ? 'per-character 14-crystal and account 180-crystal limits'
+        : 'per-character 14-crystal limit';
 
     // Group overflow by "difficulty baseName" boss label
     const byBoss = {};
-    allBosses.forEach(b => {
-        if (!overflowKeys.has(`${b.characterId}:${b.baseName}`)) return;
+    overflow.forEach(b => {
         const label = `${b.difficulty} ${b.baseName}`;
         if (!byBoss[label]) byBoss[label] = { label, baseName: b.baseName, difficulty: b.difficulty,
                                                 adjustedValue: b.adjustedValue, chars: [] };
@@ -1187,6 +1304,7 @@ function renderSellingStrategy() {
             <h2 style="color: #da1e28; margin-bottom: 6px; font-size: 1.6em;">💰 Selling Strategy</h2>
             <p style="color: #999; margin-bottom: 20px;">Based on the ${limitLabel}. Drop these crystals — they don't count toward your total.</p>
             ${bodyContent}
+            ${renderCrystalChecklist(counted)}
         </div>`;
 }
 

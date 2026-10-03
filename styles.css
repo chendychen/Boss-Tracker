@@ -933,3 +933,52 @@ tr.upg-editor-row > td { background: var(--cds-layer-02); padding: var(--spacing
 .upg-collapsed > :not(.upg-plan-head) { display: none; }
 .upg-collapsed .upg-plan-head { margin-bottom: 0; }
 .upg-collapsed .upg-filters { display: none; }
+
+/* ── Selling Strategy: weekly crystal checklist ───────────────────────────── */
+.sell-tracker { margin-top: 32px; }
+.sell-tracker-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 20px; margin-bottom: 10px; }
+.sell-tracker-head h3 { margin: 0; color: #c6c6c6; font-size: 1.3em; }
+.sell-total { color: #c6c6c6; font-weight: 700; font-size: 1.1em; }
+.sell-week { color: #8d8d8d; font-size: 0.85em; }
+.sell-progress { height: 6px; background: #262626; margin-bottom: 18px; }
+.sell-progress > div { height: 100%; background: #24a148; transition: width 0.2s; }
+.sell-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; align-items: start; }
+.sell-col { background: #393939; border-left: 3px solid #0f62fe; }
+.sell-col.sell-complete { border-left-color: #24a148; opacity: 0.85; }
+.sell-col-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; flex-wrap: wrap; }
+.sell-col-name { color: #f4f4f4; font-weight: 700; }
+.sell-count { color: #c6c6c6; font-variant-numeric: tabular-nums; }
+.sell-finish, .sell-link {
+    margin-left: auto;
+    background: #0f62fe;
+    color: #fff;
+    border: none;
+    padding: 4px 10px;
+    font-size: 0.8em;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+}
+.sell-link { background: transparent; color: #8d8d8d; text-decoration: underline; margin-left: 0; }
+.sell-all-done { margin-left: auto; color: #42be65; font-weight: 600; font-size: 0.85em; }
+.sell-list { display: flex; flex-direction: column; border-top: 1px solid #4c4c4c; }
+.sell-boss {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #333;
+    color: #c6c6c6;
+    font-family: inherit;
+    font-size: 0.85em;
+    text-align: left;
+    cursor: pointer;
+}
+.sell-boss:hover { background: #4c4c4c; }
+.sell-boss-name { flex: 1; }
+.sell-party { color: #8d8d8d; }
+.sell-state { color: #8d8d8d; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sell-done .sell-boss-name { color: #8d8d8d; text-decoration: line-through; }
+.sell-done .sell-state { color: #42be65; font-weight: 600; }
