@@ -1164,6 +1164,36 @@ function currentCrystalWeek(now = new Date()) {
     return d.toISOString().slice(0, 10);
 }
 
+// Which checklist columns the user opened or closed by hand this week. A
+// per-browser convenience, so localStorage, and it lapses with the week.
+const SELL_COLUMNS_KEY = 'bossTrackerSellColumns';
+
+function sellColumnState() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(SELL_COLUMNS_KEY));
+        if (saved && saved.week === currentCrystalWeek()) return saved;
+    } catch (e) { /* unreadable or blocked storage: fall back to defaults */ }
+    return { week: currentCrystalWeek(), open: {} };
+}
+
+function writeSellColumnState(state) {
+    try { localStorage.setItem(SELL_COLUMNS_KEY, JSON.stringify(state)); } catch (e) { /* private mode */ }
+}
+
+function toggleSellColumn(characterId, open) {
+    const state = sellColumnState();
+    state.open[characterId] = !open;
+    writeSellColumnState(state);
+    renderSellingStrategy();
+}
+
+/** Back to the default: open while unfinished, closed once all finished. */
+function clearSellColumnOverride(characterId) {
+    const state = sellColumnState();
+    delete state.open[characterId];
+    writeSellColumnState(state);
+}
+
 /** Bosses a character has finished this week; last week's ticks no longer count. */
 function getCrystalsDone(character) {
     const done = character.crystalsDone;
@@ -1188,12 +1218,15 @@ function finishAllCrystals(characterId) {
     const character = characters.find(c => c.id === characterId);
     if (!character) return;
     const counted = crystalSalePlan().counted.filter(b => b.characterId === characterId);
+    clearSellColumnOverride(characterId);
     setCrystalsDone(character, new Set([...getCrystalsDone(character), ...counted.map(b => b.baseName)]));
 }
 
 function resetCrystalsDone(characterId) {
     const character = characters.find(c => c.id === characterId);
-    if (character) setCrystalsDone(character, []);
+    if (!character) return;
+    clearSellColumnOverride(characterId);
+    setCrystalsDone(character, []);
 }
 
 /**
@@ -1207,6 +1240,7 @@ function renderCrystalChecklist(counted) {
     if (!byCharacter.length) return '';
 
     let doneTotal = 0, earned = 0;
+    const columnState = sellColumnState();
     const columns = byCharacter.map(({ char, bosses }) => {
         const done = getCrystalsDone(char);
         const finishedBosses = bosses.filter(b => done.has(b.baseName));
@@ -1214,7 +1248,9 @@ function renderCrystalChecklist(counted) {
         doneTotal += finished;
         earned += finishedBosses.reduce((sum, b) => sum + b.adjustedValue, 0);
         const complete = finished === bosses.length;
-        const rows = complete ? '' : bosses.map(b => {
+        const override = columnState.open[char.id];
+        const open = typeof override === 'boolean' ? override : !complete;
+        const rows = !open ? '' : bosses.map(b => {
             const isDone = done.has(b.baseName);
             return `
                 <button class="sell-boss ${isDone ? 'sell-done' : ''}"
@@ -1227,7 +1263,10 @@ function renderCrystalChecklist(counted) {
         return `
             <div class="sell-col ${complete ? 'sell-complete' : ''}">
                 <div class="sell-col-head">
-                    <span class="sell-col-name">${sanitizeInput(char.name)}</span>
+                    <button class="sell-col-name" onclick="toggleSellColumn(${char.id}, ${open})"
+                            aria-expanded="${open}" title="${open ? 'Hide' : 'Show'} ${sanitizeInput(char.name)}'s bosses">
+                        <span class="sell-caret">${open ? '▾' : '▸'}</span>${sanitizeInput(char.name)}
+                    </button>
                     <span class="sell-count">${finished}/${bosses.length}</span>
                     ${complete
                         ? `<span class="sell-all-done">All finished</span>
