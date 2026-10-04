@@ -240,7 +240,8 @@ function serializeCharacter(char) {
         className: char.className || (char.upgradeBuild && char.upgradeBuild.className) || null,
         usesCdrHat: char.usesCdrHat !== false,
         cdrCurve: Array.isArray(char.cdrCurve) && char.cdrCurve.length ? char.cdrCurve : null,
-        crystalsDone: char.crystalsDone || null
+        crystalsDone: char.crystalsDone || null,
+        hexaConverted: char.hexaConverted || null
     };
 }
 
@@ -286,7 +287,8 @@ function deserializeCharacter(char) {
         className: char.className || (char.upgradeBuild && char.upgradeBuild.className) || null,
         usesCdrHat: char.usesCdrHat !== false,
         cdrCurve: Array.isArray(char.cdrCurve) && char.cdrCurve.length ? char.cdrCurve : null,
-        crystalsDone: char.crystalsDone || null
+        crystalsDone: char.crystalsDone || null,
+        hexaConverted: char.hexaConverted || null
     };
 }
 
@@ -1625,6 +1627,71 @@ function bossPace(baseName, difficulty, character, avgDps) {
     };
 }
 
+// ── MapleScouter "hexa converted" ───────────────────────────────────────────
+// MapleScouter rates a character with one number (hexa converted, the HEXA
+// figure under Boss 380), adjusts it per boss for level and force (the value
+// printed on each boss card), and turns that into a cut %:
+//     cut % = (card / threshold) ^ k
+// Fitted 2026-10-05 on four characters spanning 58k-108k: k = 2.56, rms 2.2%,
+// about 3% on a character left out of the fit. Thresholds are the card value
+// needed for a 100% solo-min cut.
+const SCOUTER_K = 2.56;
+const SCOUTER_THRESHOLDS = {
+    'Kalos the Guardian|Normal': 51169, 'First Adversary|Normal': 56619, 'Lotus|Extreme': 67545,
+    'Malefic Star|Normal': 72921, 'Kaling|Normal': 73702, 'Kalos the Guardian|Chaos': 94629,
+    'Limbo|Normal': 101074, 'Black Mage|Extreme': 101734, 'Kaling|Hard': 111740,
+    'First Adversary|Hard': 113009, 'Chosen Seren|Extreme': 115938, 'Malefic Star|Hard': 129504,
+    'Limbo|Hard': 131038,
+};
+// Card value = hexa converted x (level and force multiplier relative to their
+// maximum) ^ (1 / 2.35), which reproduces observed cards within ~1.5%.
+// MapleScouter also docks 1350 Arcane Force on Black Mage's 1320 (x0.9665 on
+// the card even at max level), where our tiers apply no penalty.
+const SCOUTER_CARD_K = 2.35;
+const SCOUTER_ARCANE_CARD = 0.9665;
+
+/** The value MapleScouter would print on this boss's card, or null. */
+function scouterCardValue(character, baseName, difficulty) {
+    const hc = parseFloat(character.hexaConverted);
+    const data = BOSS_COMBAT[baseName] && BOSS_COMBAT[baseName][difficulty];
+    if (!(hc > 0) || !data) return null;
+    let mult = levelMultiplier(getCharLevel(character), data.lv) / 1.20;
+    let card = 1;
+    if (data.sac) {
+        mult *= forceMultiplier(getCharSacred(character), data.sac, 'sac') / 1.25;
+    } else if (data.af) {
+        mult *= forceMultiplier(getCharArcane(character), data.af, 'af')
+            / forceMultiplier(DEFAULT_ARCANE, data.af, 'af');
+        card = SCOUTER_ARCANE_CARD;
+    }
+    return hc * card * Math.pow(mult, 1 / SCOUTER_CARD_K);
+}
+
+/** MapleScouter's cut % for a boss from hexa converted, or null without a threshold. */
+function scouterCut(character, baseName, difficulty) {
+    const threshold = SCOUTER_THRESHOLDS[`${baseName}|${difficulty}`];
+    const card = threshold ? scouterCardValue(character, baseName, difficulty) : null;
+    return card ? 100 * Math.pow(card / threshold, SCOUTER_K) : null;
+}
+
+/** Which calibration characterDps is using, for display. */
+function calibrationSource(character) {
+    if (character.manualDps) return `DPS set directly (${character.manualDps}B/sec)`;
+    const anchor = scouterCut(character, 'Kalos the Guardian', 'Normal');
+    if (anchor) {
+        return `hexa converted ${Number(character.hexaConverted).toLocaleString()}: `
+            + `Normal Kalos ${anchor.toFixed(1)}% cut`;
+    }
+    if (parseFloat(character.calibPercent) > 0 && character.calibBoss) {
+        return `site clear ${character.calibPercent}% on ${character.calibDifficulty} ${character.calibBoss}`;
+    }
+    if (parseFloat(character.calibMinutes) > 0 && character.calibBoss) {
+        return `${character.calibMinutes} min ${character.calibDifficulty} ${character.calibBoss}`
+            + `${(parseInt(character.calibParty, 10) || 1) > 1 ? ` in a party of ${character.calibParty}` : ''}`;
+    }
+    return null;
+}
+
 /**
  * Derives a character's sustained DPS from a boss they are known to clear.
  * A manual override wins when set.
@@ -1642,6 +1709,18 @@ function bossPace(baseName, difficulty, character, avgDps) {
  */
 function characterDps(character) {
     if (character.manualDps) return character.manualDps * 1e9;
+    // Hexa converted: MapleScouter's Normal Kalos cut is the anchor (its best
+    // fitted threshold), then our HP model prices every other boss from it,
+    // exactly as a site clear % does. Like the site's %, it is capacity under
+    // a clean rotation, so the execution factor applies.
+    const anchor = scouterCut(character, 'Kalos the Guardian', 'Normal');
+    if (anchor) {
+        const eff = effectiveHP('Kalos the Guardian', 'Normal', character);
+        if (eff) {
+            const exec = parseFloat(character.executionFactor) || DEFAULT_EXECUTION;
+            return (eff.total * anchor / 100) / damageByTime(BOSS_TIME_LIMIT, 1) / exec;
+        }
+    }
     const boss = character.calibBoss, diff = character.calibDifficulty;
     // Clear-percent mode: the GMS Upgrade Tracker reports the share of a boss's
     // requirement a character delivers inside the timer, so 122% means it clears
@@ -1776,7 +1855,7 @@ function updateProgressionField(field, value) {
     } else if (field === 'calibParty') {
         character.calibParty = Math.max(1, parseInt(value, 10) || 1);
     } else if (field === 'manualDps' || field === 'ied' || field === 'calibPercent'
-            || field === 'executionFactor') {
+            || field === 'executionFactor' || field === 'hexaConverted') {
         character[field] = value === '' ? null : parseFloat(value);
     } else {
         character[field] = value === '' ? null : parseInt(value, 10);
@@ -1852,8 +1931,14 @@ function renderProgressionPanel() {
                        placeholder="1350"
                        data-prog="arcaneForce" onchange="updateProgressionField('arcaneForce', this.value)">
             </div>
+            <div class="prog-field">
+                <label>Hexa converted (MapleScouter, Boss 380)</label>
+                <input type="number" min="0" step="1" value="${character.hexaConverted || ''}"
+                       placeholder="e.g. 73418"
+                       data-prog="hexaConverted" onchange="updateProgressionField('hexaConverted', this.value)">
+            </div>
             <div class="prog-field prog-field-wide">
-                <label>Calibrate from a boss you clear</label>
+                <label>or calibrate from a boss you clear</label>
                 <select data-prog="calibBoss" onchange="updateProgressionField('calibBoss', this.value)">
                     <option value="">— pick a boss —</option>
                     ${entries.map(e => {
@@ -1880,7 +1965,7 @@ function renderProgressionPanel() {
                        data-prog="calibPercent" onchange="updateProgressionField('calibPercent', this.value)">
             </div>
             <div class="prog-field">
-                <label>execution factor (site % only)</label>
+                <label>execution factor (site % / hexa)</label>
                 <input type="number" min="1" max="3" step="0.01" value="${character.executionFactor || ''}"
                        placeholder="${DEFAULT_EXECUTION}"
                        data-prog="executionFactor" onchange="updateProgressionField('executionFactor', this.value)">
@@ -1911,6 +1996,12 @@ function renderProgressionPanel() {
             </div>`;
         return;
     }
+
+    const source = calibrationSource(character);
+    const hasScouter = parseFloat(character.hexaConverted) > 0;
+    const sourceNote = source ? `<p class="prog-sub prog-source">Calibrated from ${sanitizeInput(source)}.
+        ${hasScouter && !character.manualDps ? 'The Scouter column is MapleScouter\'s cut predicted from hexa converted, '
+            + 'which includes its expert per-boss adjustments; our margins come from boss HP.' : ''}</p>` : '';
 
     const perBurst = dps * BURST_CYCLE * BURST_SHARE;
     const offDps = dps * BURST_CYCLE * (1 - BURST_SHARE) / (BURST_CYCLE - BURST_WINDOW);
@@ -2011,6 +2102,10 @@ function renderProgressionPanel() {
                 <td class="prog-num">${fmtHP(r.cur.total)}</td>
                 <td class="prog-num">${fmtClock(r.cur.clearTime)}</td>
                 <td><span class="prog-status ${cur.cls}">${cur.status}</span>${r.cur.warn ? ' <span class="prog-flip prog-s-tight" title="' + sanitizeInput(r.cur.warn) + '">variable</span>' : ''}</td>
+                ${hasScouter ? (() => {
+                    const cut = scouterCut(character, r.e.baseName, r.e.difficulty);
+                    return `<td class="prog-num ${cut === null ? '' : cut >= 100 ? 'prog-s-ok' : 'prog-s-fail'}">${cut === null ? '' : cut.toFixed(1) + '%'}</td>`;
+                })() : ''}
                 ${adjCells}
             </tr>`;
     }).join('');
@@ -2071,12 +2166,14 @@ function renderProgressionPanel() {
             <p class="prog-sub">Effective HP is raw HP divided by your level, force and defense multipliers —
                the damage you actually have to output. Everything is measured against the 30:00 timer.</p>
             ${setup}
+            ${sourceNote}
             ${cadence}
             ${adjustPanel}
             <div class="prog-table-wrap">
             <table class="prog-table">
                 <thead><tr><th>Boss</th><th class="prog-num">Raw HP</th><th class="prog-num">Effective</th>
                     <th class="prog-num">Clear time</th><th>Margin</th>
+                    ${hasScouter ? '<th class="prog-num" title="MapleScouter cut predicted from hexa converted">Scouter</th>' : ''}
                     ${active ? '<th class="prog-num prog-adj-col">Clear (adj)</th><th class="prog-adj-col">Margin (adj)</th><th class="prog-num prog-adj-col">Change</th>' : ''}
                 </tr></thead>
                 <tbody>${rows}</tbody>
