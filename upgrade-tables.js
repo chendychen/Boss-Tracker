@@ -274,8 +274,35 @@
         return Math.ceil(baseAtt * (Math.floor(itemLevel / 40) + 1) * tier * Math.pow(1.1, tier - shift) / 100);
     }
 
+    // ── Set effects ─────────────────────────────────────────────────────────
+    // What each piece threshold adds (thresholds stack). Sources: maplestorywiki
+    // set pages (Eternal, Arcane Umbra, AbsoLab, Root Abyss, Pitched Boss, Boss
+    // Accessory, Superior Gollux, Dawn Boss). all = all stats (flat),
+    // mainSub = primary and secondary stat, hp = flat Max HP. HP/MP % and DEF
+    // lines are left out. Brilliant Boss beyond 2 pieces is partial.
+    const SET_EFFECTS = {
+        'Eternal': { 2: { att: 40, boss: 10 }, 3: { all: 50, att: 40, boss: 10 }, 4: { att: 40, boss: 10 },
+            5: { att: 40, ied: 20 }, 6: { att: 40, boss: 15 }, 7: { all: 50, att: 40, boss: 15 }, 8: { att: 40, boss: 15 } },
+        'Arcane Umbra': { 2: { att: 30, boss: 10 }, 3: { att: 30, ied: 10 }, 4: { all: 50, att: 35, boss: 10 },
+            5: { att: 40, boss: 10 }, 6: { att: 30 }, 7: { att: 30, ied: 10 } },
+        'AbsoLab': { 2: { att: 20, boss: 10 }, 3: { all: 30, att: 20, boss: 10 }, 4: { att: 25, ied: 10 },
+            5: { att: 30, boss: 10 }, 6: { att: 20 }, 7: { att: 20, ied: 10 } },
+        'CRA': { 2: { mainSub: 20 }, 3: { all: 9, att: 50 }, 4: { boss: 30 } },
+        'Pitched Boss': { 2: { all: 10, att: 10, boss: 10, hp: 250 }, 3: { all: 10, att: 10, ied: 10, hp: 250 },
+            4: { all: 15, att: 15, critDmg: 5, hp: 375 }, 5: { all: 15, att: 15, boss: 10 }, 6: { all: 15, att: 15, ied: 10 },
+            7: { all: 15, att: 15, critDmg: 5 }, 8: { all: 15, att: 15, boss: 10 }, 9: { all: 15, att: 15, critDmg: 5 },
+            10: { all: 20, att: 20, boss: 10, hp: 500 } },
+        'Boss Accessory': { 3: { all: 10, att: 5 }, 5: { all: 10, att: 5 }, 7: { all: 10, att: 10, ied: 10 },
+            9: { all: 15, att: 10, boss: 10 } },
+        'Superior Gollux': { 2: { all: 20 }, 3: { att: 35 }, 4: { boss: 30, ied: 30 } },
+        'Dawn Boss': { 2: { all: 10, att: 10, boss: 10, hp: 250 }, 3: { all: 10, att: 10, hp: 250 },
+            4: { all: 10, att: 10, ied: 10, hp: 250 } },
+        'Brilliant Boss': { 2: { all: 20, att: 20, boss: 15, hp: 500 }, 3: { ied: 15 }, 4: { critDmg: 5 }, 5: { boss: 15 } },
+    };
+
     root.UpgradeEngine = Object.assign(root.UpgradeEngine || {}, {
         TABLES: {
+            SET_EFFECTS,
             SF_RATES, SF_MODES, sfBaseCost, sfRecoverStar, sfMaxStars, sfStarGain,
             CUBE_POOLS, SLOT_POOL, cubePool, CUBES, CUBE_LIMITS, revealCost,
             FLAME_TIERS_ADVANTAGED, FLAME_TIERS_NORMAL, FLAME_LINES_NORMAL,

@@ -998,3 +998,32 @@ tr.upg-editor-row > td { background: var(--cds-layer-02); padding: var(--spacing
 .sell-done .sell-state { color: #42be65; font-weight: 600; }
 .sell-earned { color: #42be65; font-weight: 700; font-size: 1.1em; font-variant-numeric: tabular-nums; }
 .sell-of { color: #8d8d8d; font-weight: 400; font-size: 0.85em; }
+
+/* ── Progression: predictor sources ──────────────────────────────────────── */
+.prog-group-label {
+    flex-basis: 100%;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--cds-text-primary);
+}
+.prog-group-label .prog-sub { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.prog-fallback { display: block; }
+.prog-fallback > summary { cursor: pointer; margin-bottom: var(--spacing-03); }
+.prog-fallback[open] { display: flex; flex-wrap: wrap; gap: var(--spacing-04); }
+.prog-sources { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--spacing-05); }
+.prog-source {
+    display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline;
+    background: var(--cds-layer-01);
+    border-left: 3px solid var(--cds-border-subtle);
+    padding: 8px 12px;
+    font-size: 0.875rem;
+    color: var(--cds-text-secondary);
+}
+.prog-source-primary { border-left-color: var(--cds-interactive); color: var(--cds-text-primary); }
+.prog-table th.prog-cmp-col, .prog-table td.prog-cmp-col { background: rgba(190, 149, 255, 0.06); }
+.prog-table th.prog-cmp-col { color: #be95ff; }
+.upg-sets { font-size: 0.8rem; color: var(--cds-text-secondary); margin: 0 0 var(--spacing-04); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.upg-sets span { background: var(--cds-layer-02); padding: 2px 8px; }
+.upg-sets em { color: #42be65; font-style: normal; font-size: 0.75rem; }

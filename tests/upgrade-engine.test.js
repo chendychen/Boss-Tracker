@@ -490,3 +490,84 @@ describe('cooldown curves', () => {
         near(E.fdGain(st, { cdr: 1 }), 0.7 / 1.014 , 1e-6);   // 2s -> 3s at 0.7% FD per second
     });
 });
+
+describe('sets and item swaps', () => {
+    const cat = name => E.GEAR_CATALOG.find(g => g.name === name);
+    const item = (slot, name, stars = 22) => ({ ...E.newItem(slot, cat(name)), stars });
+    const genesis = { ...E.newItem('weapon', cat('Genesis Weapon')), baseStats: { int: 150, luk: 150, matt: 406 } };
+    const craBuild = () => ({
+        weapon: genesis,
+        hat: item('hat', 'CRA Hat'), top: item('top', 'CRA Top'), bottom: item('bottom', 'CRA Bottom'),
+    });
+
+    test('a lucky weapon tops up sets with 3 real pieces', () => {
+        const counts = E.setCounts(craBuild());
+        assert.equal(counts.CRA, 4);
+        assert.equal(counts.Eternal, 1);
+        const two = craBuild();
+        delete two.bottom;
+        assert.equal(E.setCounts(two).CRA, 2);
+    });
+
+    test('set thresholds stack', () => {
+        const d = E.setDelta(craBuild(), 'Ice/Lightning');
+        assert.equal(d.boss, 30);                     // CRA 4
+        assert.equal(d.att, 50);                      // CRA 3
+        assert.equal(d.mainBase, 20 + 9);             // CRA 2 + 3
+    });
+
+    test('swapping there and back is free', () => {
+        const items = craBuild();
+        const next = item('hat', 'Eternal Hat');
+        const there = E.swapDelta(items, 'hat', next, 'Ice/Lightning', 280);
+        const back = E.swapDelta({ ...items, hat: next }, 'hat', items.hat, 'Ice/Lightning', 280);
+        const after = E.applyDelta(E.applyDelta(SHEET, there), back);
+        const want = E.normalizeStats(SHEET);
+        for (const k of Object.keys(want)) if (typeof want[k] === 'number') near(after[k], want[k], 1e-9);
+    });
+
+    test('breaking a lucky-held set can make one piece a loss and the whole set a gain', () => {
+        const items = craBuild();
+        const stats = { ...SHEET, att: 3000 };
+        const one = E.fdGain(stats, E.swapDelta(items, 'hat', item('hat', 'Eternal Hat'), 'Ice/Lightning', 280));
+        const all = E.fdGain(stats, E.swapDeltaMany(items, {
+            hat: item('hat', 'Eternal Hat'), top: item('top', 'Eternal Top'), bottom: item('bottom', 'Eternal Bottom'),
+        }, 'Ice/Lightning', 280));
+        assert.ok(one < 0, `one piece ${one}`);
+        assert.ok(all > 0, `whole set ${all}`);
+    });
+
+    test('items with unknown base stats cannot be priced', () => {
+        const items = { face: item('face', 'Berserked') };
+        assert.equal(E.swapDelta(items, 'face', E.newItem('face', cat('Twilight Mark')), 'Bowmaster', 280), null);
+    });
+
+    test('swap options list whole-set moves with their set changes', () => {
+        const build = { className: 'Ice/Lightning', stats: { ...SHEET, att: 3000 }, items: craBuild() };
+        const opts = E.swapOptions(build, {}, { charLevel: 280 });
+        const whole = opts.find(o => o.whole && /Eternal/.test(o.to));
+        assert.ok(whole, 'expected a whole-set CRA to Eternal swap');
+        assert.match(whole.sets, /CRA 4→0/);
+        assert.ok(!opts.some(o => !o.whole && o.to === 'Eternal Hat'), 'the lone Eternal hat is a loss and should not be listed');
+    });
+});
+
+describe('lucky weapon scope', () => {
+    const cat = name => E.GEAR_CATALOG.find(g => g.name === name);
+    test('accessory sets have no weapon piece, so the lucky weapon does not top them up', () => {
+        const items = {
+            weapon: E.newItem('weapon', cat('Genesis Weapon')),
+            ring1: E.newItem('ring1', cat('Superior Gollux Ring')),
+            pendant1: E.newItem('pendant1', cat('Superior Gollux Pendant')),
+            earring: E.newItem('earring', cat('Superior Gollux Earring')),
+            face: E.newItem('face', cat('Berserked')), eye: E.newItem('eye', cat('Magic Eyepatch')),
+            belt: E.newItem('belt', cat('Dreamy Belt')),
+            shoes: E.newItem('shoes', cat('Arcane Umbra Shoes')), gloves: E.newItem('gloves', cat('Arcane Umbra Gloves')),
+            cape: E.newItem('cape', cat('Arcane Umbra Cape')),
+        };
+        const c = E.setCounts(items);
+        assert.equal(c['Superior Gollux'], 3);
+        assert.equal(c['Pitched Boss'], 3);
+        assert.equal(c['Arcane Umbra'], 4);
+    });
+});

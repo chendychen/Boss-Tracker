@@ -1134,55 +1134,78 @@
     }
 
     // Common endgame gear. Replacement costs are the site's defaults and are
-    // what a boom is charged at; everything is editable per item.
-    const G = (slot, name, level, set, replacementCost, extra = {}) =>
-        ({ slot, name, level, set, replacementCost, sfKind: 'ordinary', ...extra });
+    // what a boom is charged at; everything is editable per item. `base` is
+    // the item's own stats ([stat on each class stat, ATT/MATT, Max HP]), read
+    // from Upgrade Tracker exports and maplestorywiki class pages; null where
+    // unknown, which keeps the item out of swap suggestions. `via` is how the
+    // item is obtained, for swaps.
+    const G = (slot, name, level, set, replacementCost, base = null, extra = {}) =>
+        ({ slot, name, level, set, replacementCost, sfKind: 'ordinary', base, ...extra });
+    const VIA = {
+        'Eternal': 'Eternal pieces (10 per item)', 'Arcane Umbra': 'Arcane Umbra coins or boxes',
+        'AbsoLab': 'AbsoLab coins or boxes', 'CRA': 'Root Abyss drop or coins',
+        'Pitched Boss': 'pitched boss drop', 'Dawn Boss': 'Dawn boss drop',
+        'Superior Gollux': 'Gollux coins', 'Boss Accessory': 'boss drop',
+    };
     const GEAR_CATALOG = [
-        G('weapon', 'Genesis Weapon', 200, 'Eternal', 0, { sfKind: 'fixed', stars: 22, starCap: 22, lucky: true }),
-        G('weapon', 'Destiny Weapon', 250, 'Eternal', 0, { sfKind: 'destiny', stars: 22, starCap: 22, lucky: true }),
+        G('weapon', 'Genesis Weapon', 200, 'Eternal', 0, null, { sfKind: 'fixed', stars: 22, starCap: 22, lucky: true }),
+        G('weapon', 'Destiny Weapon', 250, 'Eternal', 0, null, { sfKind: 'destiny', stars: 22, starCap: 22, lucky: true }),
         G('weapon', 'Arcane Umbra Weapon', 200, 'Arcane Umbra', 1e9),
         G('weapon', 'AbsoLab Weapon', 160, 'AbsoLab', 3e8),
         G('secondary', 'Secondary', 140, 'None', 5e8),
-        G('emblem', "Mitra's Rage", 200, 'Pitched Boss', 0),
+        G('emblem', "Mitra's Rage", 200, 'Pitched Boss', 0, [0, 0, 0]),
         G('emblem', 'Gold Maple Leaf Emblem', 100, 'None', 0),
-        ...['Hat', 'Top', 'Bottom', 'Shoes', 'Gloves', 'Cape', 'Shoulder']
-            .map(p => G(p.toLowerCase(), `Eternal ${p}`, 250, 'Eternal', 2e9)),
-        ...['Hat', 'Shoes', 'Gloves', 'Cape', 'Shoulder']
-            .map(p => G(p.toLowerCase(), `Arcane Umbra ${p}`, 200, 'Arcane Umbra', 1e8)),
-        G('top', 'Arcane Umbra Suit (overall)', 200, 'Arcane Umbra', 1e8),
-        ...['Hat', 'Shoes', 'Gloves', 'Cape', 'Shoulder']
-            .map(p => G(p.toLowerCase(), `AbsoLab ${p}`, 160, 'AbsoLab', 3e7)),
-        G('top', 'AbsoLab Overall', 160, 'AbsoLab', 3e7),
-        ...['Hat', 'Top', 'Bottom'].map(p => G(p.toLowerCase(), `CRA ${p}`, 150, 'CRA', 5e6)),
-        G('belt', 'Dreamy Belt', 200, 'Pitched Boss', 8e9),
-        G('belt', 'Superior Engraved Gollux Belt', 150, 'Superior Gollux', 5e8),
-        G('face', 'Berserked', 160, 'Pitched Boss', 8e9),
+        G('hat', 'Eternal Hat', 250, 'Eternal', 2e9, [80, 0, 0]),
+        G('top', 'Eternal Top', 250, 'Eternal', 2e9, [100, 5, 0]),
+        G('bottom', 'Eternal Bottom', 250, 'Eternal', 2e9, [100, 5, 0]),
+        G('shoes', 'Eternal Shoes', 250, 'Eternal', 2e9, [65, 5, 0]),
+        G('gloves', 'Eternal Gloves', 250, 'Eternal', 2e9, [55, 12, 0]),
+        G('cape', 'Eternal Cape', 250, 'Eternal', 2e9, [50, 8, 0]),
+        G('shoulder', 'Eternal Shoulder', 250, 'Eternal', 2e9, [50, 14, 0]),
+        G('hat', 'Arcane Umbra Hat', 200, 'Arcane Umbra', 1e8, [65, 7, 0]),
+        G('top', 'Arcane Umbra Suit (overall)', 200, 'Arcane Umbra', 1e8, [85, 9, 0]),
+        G('shoes', 'Arcane Umbra Shoes', 200, 'Arcane Umbra', 1e8, [40, 9, 0]),
+        G('gloves', 'Arcane Umbra Gloves', 200, 'Arcane Umbra', 1e8, [40, 9, 0]),
+        G('cape', 'Arcane Umbra Cape', 200, 'Arcane Umbra', 1e8, [35, 6, 0]),
+        G('shoulder', 'Arcane Umbra Shoulder', 200, 'Arcane Umbra', 1e8, [35, 20, 0]),
+        G('hat', 'AbsoLab Hat', 160, 'AbsoLab', 3e7, [45, 3, 0]),
+        G('top', 'AbsoLab Overall', 160, 'AbsoLab', 3e7, [65, 5, 0]),
+        G('shoes', 'AbsoLab Shoes', 160, 'AbsoLab', 3e7, [20, 5, 0]),
+        G('gloves', 'AbsoLab Gloves', 160, 'AbsoLab', 3e7, [20, 5, 0]),
+        G('cape', 'AbsoLab Cape', 160, 'AbsoLab', 3e7, [15, 2, 0]),
+        G('shoulder', 'AbsoLab Shoulder', 160, 'AbsoLab', 3e7, [14, 10, 0]),
+        G('hat', 'CRA Hat', 150, 'CRA', 5e6, [40, 2, 0]),
+        G('top', 'CRA Top', 150, 'CRA', 5e6, [30, 2, 0]),
+        G('bottom', 'CRA Bottom', 150, 'CRA', 5e6, [30, 2, 0]),
+        G('belt', 'Dreamy Belt', 200, 'Pitched Boss', 8e9, [50, 7, 500]),
+        G('belt', 'Superior Engraved Gollux Belt', 150, 'Superior Gollux', 5e8, [25, 10, 300]),
+        G('face', 'Berserked', 160, 'Pitched Boss', 8e9, [40, 10, 800]),
         G('face', 'Twilight Mark', 140, 'Dawn Boss', 5e9),
-        G('eye', 'Magic Eyepatch', 160, 'Pitched Boss', 8e9),
-        G('eye', 'Papulatus Mark', 145, 'Boss Accessory', 5e8),
-        G('earring', 'Commanding Force Earring', 200, 'Pitched Boss', 8e9),
+        G('eye', 'Magic Eyepatch', 160, 'Pitched Boss', 8e9, [30, 7, 500]),
+        G('eye', 'Papulatus Mark', 145, 'Boss Accessory', 5e8, [8, 1, 0]),
+        G('earring', 'Commanding Force Earring', 200, 'Pitched Boss', 8e9, [15, 5, 500]),
         G('earring', 'Estella Earrings', 160, 'Dawn Boss', 5e9),
-        G('earring', 'Superior Gollux Earring', 150, 'Superior Gollux', 5e8),
+        G('earring', 'Superior Gollux Earring', 150, 'Superior Gollux', 5e8, [15, 10, 300]),
         ...['pendant1', 'pendant2'].flatMap(s => [
-            G(s, 'Source of Suffering', 160, 'Pitched Boss', 8e9),
-            G(s, 'Daybreak Pendant', 140, 'Dawn Boss', 5e9),
-            G(s, 'Superior Gollux Pendant', 150, 'Superior Gollux', 5e8),
+            G(s, 'Source of Suffering', 160, 'Pitched Boss', 8e9, [10, 5, 500]),
+            G(s, 'Daybreak Pendant', 140, 'Dawn Boss', 5e9, [8, 2, 0]),
+            G(s, 'Superior Gollux Pendant', 150, 'Superior Gollux', 5e8, [28, 5, 300]),
             G(s, 'Dominator Pendant', 140, 'Boss Accessory', 5e8),
         ]),
         ...['ring1', 'ring2', 'ring3', 'ring4'].flatMap(s => [
-            G(s, 'Endless Terror', 200, 'Pitched Boss', 8e9),
-            G(s, 'Dawn Guardian Angel Ring', 160, 'Dawn Boss', 5e9),
-            G(s, 'Superior Gollux Ring', 150, 'Superior Gollux', 5e8),
+            G(s, 'Endless Terror', 200, 'Pitched Boss', 8e9, [5, 4, 250]),
+            G(s, 'Dawn Guardian Angel Ring', 160, 'Dawn Boss', 5e9, [5, 2, 200]),
+            G(s, 'Superior Gollux Ring', 150, 'Superior Gollux', 5e8, [10, 0, 300]),
             G(s, 'Guardian Angel Ring', 160, 'None', 5e8),
             G(s, 'Meister Ring', 140, 'None', 5e8),
             G(s, "Kanna's Treasure", 140, 'Boss Accessory', 5e8),
-            G(s, 'Oz Ring', 150, 'None', 0, { sfKind: 'special', locked: true }),
+            G(s, 'Oz Ring', 150, 'None', 0, [0, 0, 0], { sfKind: 'special', locked: true }),
         ]),
-        G('pocket', 'Cursed Spellbook', 160, 'Pitched Boss', 8e9),
+        G('pocket', 'Cursed Spellbook', 160, 'Pitched Boss', 8e9, [20, 10, 100]),
         G('pocket', 'Pink Holy Cup', 140, 'Boss Accessory', 0),
-        G('heart', 'Black Heart', 120, 'Pitched Boss', 0, { sfKind: 'special', stars: 15, starCap: 15 }),
-        G('heart', 'Plasma Heart', 130, 'None', 3e9),
-        G('badge', 'Crystal Ventus Badge', 130, 'None', 0),
+        G('heart', 'Black Heart', 120, 'Pitched Boss', 0, [10, 77, 0], { sfKind: 'special', stars: 15, starCap: 15 }),
+        G('heart', 'Plasma Heart', 130, 'None', 3e9, [10, 5, 0]),
+        G('badge', 'Crystal Ventus Badge', 130, 'None', 0, [10, 5, 0]),
         G('medal', 'Medal', 1, 'None', 0),
     ];
     const STANDARD_SLOTS = ['weapon', 'secondary', 'emblem', 'hat', 'top', 'bottom', 'shoes', 'gloves',
@@ -1192,15 +1215,204 @@
     /** A fresh inventory item from a catalog entry (or a bare slot). */
     function newItem(slot, entry = null) {
         const e = entry || { slot, name: '', level: 200, set: 'None', replacementCost: 0, sfKind: 'ordinary' };
-        return normalizeItem(slot, {
+        const [stat, att, hp] = e.base || [0, 0, 0];
+        const item = normalizeItem(slot, {
             name: e.name, itemLevel: e.level, equipmentSet: e.set, replacementCost: e.replacementCost,
             starforceItemKind: e.sfKind, currentStars: e.stars || 0, starforceCap: e.starCap || 0,
             category: slot === 'weapon' || slot === 'secondary' || slot === 'emblem' ? 'weapon' : 'armor',
             isWSE: ['weapon', 'secondary', 'emblem'].includes(slot),
             potentialTier: /badge|medal/.test(slot) || e.sfKind === 'special' ? 'none' : 'legendary',
             potentialLines: [], potentialPhysicalLineCount: 3, locked: !!e.locked,
-            flames: {}, baseStats: { att: 0, matt: 0 },
+            flames: {}, baseStats: { str: stat, dex: stat, int: stat, luk: stat, att, matt: att, hp },
         });
+        item.baseKnown = !!e.base;
+        return item;
+    }
+
+    // ── Sets and item swaps ─────────────────────────────────────────────────
+
+    const isLucky = item => !!item && (/genesis|destiny/i.test(item.name || '') || item.lucky);
+
+    // Sets that include a weapon. A lucky weapon only stands in for sets like
+    // these: accessory sets (pitched, Gollux, Dawn, Brilliant, boss accessory)
+    // have no weapon piece, so it does nothing for them (user, 2026-10-05).
+    const SETS_WITH_WEAPON = new Set(['Eternal', 'Arcane Umbra', 'AbsoLab', 'CRA']);
+
+    /**
+     * Pieces worn per set. A Genesis or Destiny weapon is a piece of its own
+     * set (Eternal) and also counts once toward every other set that has a
+     * weapon piece, where at least 3 real pieces are worn (the lucky item rule).
+     */
+    function setCounts(items) {
+        const counts = {};
+        let lucky = null;
+        for (const item of Object.values(items || {})) {
+            if (!item || !item.set || item.set === 'None') continue;
+            counts[item.set] = (counts[item.set] || 0) + 1;
+            if (isLucky(item)) lucky = item.set;
+        }
+        const out = { ...counts };
+        if (lucky) {
+            for (const [set, n] of Object.entries(counts)) {
+                if (set !== lucky && n >= 3 && SETS_WITH_WEAPON.has(set)) out[set] = n + 1;
+            }
+        }
+        return out;
+    }
+
+    /** Stat delta from every active set threshold. */
+    function setDelta(items, className) {
+        const cs = classStats(className);
+        const table = root.UpgradeEngine.TABLES.SET_EFFECTS;
+        const d = {};
+        const add = (k, v) => { if (v) d[k] = (d[k] || 0) + v; };
+        for (const [set, n] of Object.entries(setCounts(items))) {
+            for (const [pieces, fx] of Object.entries(table[set] || {})) {
+                if (n < +pieces) continue;
+                // All stat never includes HP, so a Demon Avenger only gets the STR.
+                add('mainBase', cs.main === 'hp' ? 0 : (fx.all || 0) + (fx.mainSub || 0));
+                add('subBase', (fx.all || 0) + (fx.mainSub || 0));
+                if (cs.main === 'hp') add('mainBase', fx.hp || 0);
+                add('att', fx.att);
+                add('boss', fx.boss);
+                add('critDmg', fx.critDmg);
+                if (fx.ied) d.ied = [...(d.ied || []), fx.ied];
+            }
+        }
+        return d;
+    }
+
+    /** Stat delta from an item's own base stats. */
+    function baseDelta(item, className) {
+        const b = item && item.baseStats;
+        if (!b) return {};
+        const cs = classStats(className);
+        return { mainBase: +b[cs.main] || 0, subBase: +b[cs.sub] || 0, att: +(cs.magic ? b.matt : b.att) || 0 };
+    }
+
+    /** Whether an item's base stats are known well enough to price a swap. */
+    function baseKnown(item) {
+        if (!item) return true;                       // an empty slot adds nothing
+        if (item.baseKnown !== undefined) return item.baseKnown;
+        return !!item.baseStats;                      // imported items carry theirs
+    }
+
+    /** Everything an item adds on its own: base, star force, potential, flames. */
+    function itemFull(item, className, charLevel) {
+        if (!item) return {};
+        return sumDeltas(baseDelta(item, className), itemContribution(item, className, charLevel));
+    }
+
+    /**
+     * The stat change from putting `next` in `slot` (null empties it): the old
+     * item's own stats out, the new one's in, and the difference in set
+     * bonuses across the whole build. Null when either item's base is unknown.
+     */
+    function swapDelta(items, slot, next, className, charLevel) {
+        return swapDeltaMany(items, { [slot]: next }, className, charLevel);
+    }
+
+    /** swapDelta for several slots at once: { slot: newItem or null }. */
+    function swapDeltaMany(items, changes, className, charLevel) {
+        const after = { ...(items || {}) };
+        const parts = [];
+        for (const [slot, next] of Object.entries(changes)) {
+            const prev = (items || {})[slot] || null;
+            if (!baseKnown(prev) || !baseKnown(next)) return null;
+            parts.push(negateDelta(itemFull(prev, className, charLevel)), itemFull(next, className, charLevel));
+            if (next) after[slot] = next; else delete after[slot];
+        }
+        return sumDeltas(...parts, negateDelta(setDelta(items, className)), setDelta(after, className));
+    }
+
+    /** "Eternal 3→4 · CRA 4→2" for the sets a swap changes. */
+    function describeSetChange(items, slot, next) {
+        const changes = typeof slot === 'object' ? slot : { [slot]: next };
+        const before = setCounts(items);
+        const after = setCounts({ ...items, ...changes });
+        const sets = new Set([...Object.keys(before), ...Object.keys(after)]);
+        return [...sets].filter(s => (before[s] || 0) !== (after[s] || 0))
+            .map(s => `${s} ${before[s] || 0}→${after[s] || 0}`).join(' · ');
+    }
+
+    /**
+     * Item swaps worth making, best final damage first. The new item is
+     * starred to the target (the plan's star force target, or its own fixed
+     * stars) and keeps the old item's potential and flames, so the comparison
+     * is the item itself and its set bonuses. Cost is the mesos to star it.
+     */
+    function swapOptions(build, settings = {}, { charLevel = 280 } = {}) {
+        const s = { ...DEFAULT_SETTINGS, ...settings };
+        const tables = root.UpgradeEngine.TABLES;
+        const stats = analysisStats(build, s);
+        const pdr = +s.pdr || DEFAULT_PDR;
+        if (!damageIndex(stats, pdr)) return [];
+        const items = build.items || {};
+        const worn = new Set(Object.values(items).map(i => i && i.name));
+        // The replacement as it would be worn: starred to the target, carrying
+        // the old item's potential and flames.
+        const replacement = (slot, current, entry) => {
+            const next = newItem(slot, entry);
+            if (next.sfKind === 'ordinary') next.stars = Math.min(tables.sfMaxStars(next.level), s.sfMaxStar || 22);
+            next.potTier = current.potTier;
+            next.potLines = (current.potLines || []).map(l => ({ ...l }));
+            next.lineCount = current.lineCount || 3;
+            next.flames = tables.FLAMEABLE_SLOTS.has(slot) ? { ...(current.flames || {}) } : {};
+            return next;
+        };
+        const starCost = next => (next.sfKind === 'ordinary' && next.stars
+            ? sfSteps({ ...next, stars: 0 }, next.stars, s)(0, next.stars).cost : 0);
+        const swappable = (slot, current) => current && !current.locked && slot !== 'weapon' && baseKnown(current);
+        const out = [];
+
+        for (const [slot, current] of Object.entries(items)) {
+            if (!swappable(slot, current)) continue;
+            for (const entry of GEAR_CATALOG) {
+                if (entry.slot !== slot || !entry.base || entry.name === current.name || worn.has(entry.name)) continue;
+                if (entry.sfKind === 'special' || /badge|medal/.test(slot)) continue;
+                const next = replacement(slot, current, entry);
+                const delta = swapDelta(items, slot, next, build.className, charLevel);
+                if (!delta) continue;
+                const gain = fdGain(stats, delta, pdr);
+                if (gain <= 0.005) continue;
+                out.push({
+                    type: 'swap', slots: [slot], from: current.name, to: entry.name, stars: next.stars,
+                    fdGain: gain, cost: starCost(next), via: VIA[entry.set] || 'drop',
+                    sets: describeSetChange(items, slot, next),
+                });
+            }
+        }
+
+        // Whole-set swaps: every armor piece of one set into another at once.
+        // A set bonus often makes the first piece a loss and the full move a
+        // gain (three CRA pieces held at 4 by a lucky weapon, say).
+        const ARMOR = ['hat', 'top', 'bottom', 'shoes', 'gloves', 'cape', 'shoulder'];
+        const fromSets = new Set(ARMOR.map(sl => items[sl] && items[sl].set).filter(x => x && x !== 'None'));
+        for (const fromSet of fromSets) {
+            const slots = ARMOR.filter(sl => items[sl] && items[sl].set === fromSet && swappable(sl, items[sl]));
+            if (slots.length < 2) continue;
+            for (const toSet of ['Eternal', 'Arcane Umbra', 'AbsoLab']) {
+                if (toSet === fromSet) continue;
+                const changes = {};
+                for (const sl of slots) {
+                    const entry = GEAR_CATALOG.find(g => g.slot === sl && g.set === toSet && g.base);
+                    if (entry) changes[sl] = replacement(sl, items[sl], entry);
+                }
+                const moved = Object.keys(changes);
+                if (moved.length < 2) continue;
+                const delta = swapDeltaMany(items, changes, build.className, charLevel);
+                if (!delta) continue;
+                const gain = fdGain(stats, delta, pdr);
+                if (gain <= 0.005) continue;
+                out.push({
+                    type: 'swap', slots: moved, from: `${fromSet} ${moved.join(', ')}`,
+                    to: `${toSet} ${moved.join(', ')}`, stars: Object.values(changes)[0].stars,
+                    fdGain: gain, cost: Object.values(changes).reduce((a, n) => a + starCost(n), 0),
+                    via: VIA[toSet] || 'drop', sets: describeSetChange(items, changes), whole: true,
+                });
+            }
+        }
+        return out.sort((a, b) => b.fdGain - a.fdGain);
     }
 
     // ── Importing builds ────────────────────────────────────────────────────
@@ -1321,5 +1533,6 @@
         flameScore, itemContribution, restatItem, lineStatsForSlot, lineValuesFor, LINE_LABELS,
         describeClass, STAT_NAMES, describeLines, weighIed, lineSetScorer, CDR_CURVES, cdrCurveAt, gearCdr, analysisStats, targetUnit, lineEquivalent, scoreThresholds, equivalenceLegend,
         GEAR_CATALOG, STANDARD_SLOTS, newItem,
+        setCounts, setDelta, baseDelta, baseKnown, itemFull, swapDelta, swapDeltaMany, describeSetChange, swapOptions,
     });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

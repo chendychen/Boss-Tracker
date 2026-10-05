@@ -288,13 +288,24 @@ function editUpgradeItem(slot, mutate, { swap = false, forceUpgrade = false } = 
     const build = ensureUpgradeBuild(character);
     if (!build.items) build.items = {};
     const before = build.items[slot] ? JSON.parse(JSON.stringify(build.items[slot])) : null;
+    const itemsBefore = { ...build.items, [slot]: before };
+    if (!before) delete itemsBefore[slot];
     const item = build.items[slot] || UpgradeEngine.newItem(slot);
     mutate(item);
     build.items[slot] = item;
     if (forceUpgrade || getUpgradeEditMode(build) === 'upgrade') {
-        build.stats = UpgradeEngine.restatItem(build.stats, before, item,
-            build.className, getCharLevel(character));
-        if (swap) build.statsStale = true;
+        // A swap (or a level or set change) moves base stats and set bonuses
+        // too; that is priced exactly when both items' base stats are known,
+        // and otherwise the sheet is flagged for a re-read from the game.
+        const delta = swap ? UpgradeEngine.swapDelta(itemsBefore, slot, item,
+            build.className, getCharLevel(character)) : null;
+        if (delta) {
+            build.stats = UpgradeEngine.applyDelta(build.stats, delta);
+        } else {
+            build.stats = UpgradeEngine.restatItem(build.stats, before, item,
+                build.className, getCharLevel(character));
+            if (swap) build.statsStale = true;
+        }
     }
     saveToLocalStorage();
     renderUpgradesCharacterTabs();
@@ -358,10 +369,15 @@ function removeUpgradeItem(slot) {
     if (!build || !build.items || !build.items[slot]) return;
     if (!confirm(`Remove ${build.items[slot].name || slot}?`)) return;
     const before = build.items[slot];
+    const delta = UpgradeEngine.swapDelta(build.items, slot, null, build.className, getCharLevel(character));
     delete build.items[slot];
     if (getUpgradeEditMode(build) === 'upgrade') {
-        build.stats = UpgradeEngine.restatItem(build.stats, before, null, build.className, getCharLevel(character));
-        build.statsStale = true;
+        if (delta) {
+            build.stats = UpgradeEngine.applyDelta(build.stats, delta);
+        } else {
+            build.stats = UpgradeEngine.restatItem(build.stats, before, null, build.className, getCharLevel(character));
+            build.statsStale = true;
+        }
     }
     upgradeEditSlot = null;
     saveToLocalStorage();
@@ -431,9 +447,11 @@ function cachedRecommendations(character, build) {
  * brings on pace, using the Progression tab's own margin for this character.
  */
 function buildUpgradePlan(character, recs) {
-    const dps = characterDps(character);
-    const failing = dps > 0 ? allCombatEntries()
-        .map(e => ({ ...e, pace: bossPace(e.baseName, e.difficulty, character, dps) }))
+    // Same predictor as the Progression tab: a calibrated run when entered,
+    // otherwise MapleScouter's cuts from hexa converted.
+    const calibrated = predictionSources(character).length > 0;
+    const failing = calibrated ? allCombatEntries()
+        .map(e => ({ ...e, pace: predictPace(character, e.baseName, e.difficulty) }))
         .filter(e => e.pace && !e.pace.clears && !e.pace.blocked && isFinite(e.pace.damageNeeded))
         : [];
     let mult = 1, cost = 0;
@@ -451,7 +469,7 @@ function buildUpgradePlan(character, recs) {
     });
     const nextBoss = failing.filter(e => !e.unlocked)
         .sort((a, b) => a.pace.damageNeeded - b.pace.damageNeeded)[0] || null;
-    return { plan, nextBoss, calibrated: dps > 0 };
+    return { plan, nextBoss, calibrated };
 }
 
 function renderUpgradeSettings() {
@@ -670,8 +688,16 @@ function renderUpgradeInventory(character, build) {
                 : 'Edits leave the stat sheet alone: use this while entering gear the stat window already includes.'}
                 The Worth columns are the final damage each potential or flame gives now (what you would lose without it).
                 Click a row to edit it.</p>
-            ${build.statsStale ? `<div class="upg-stale"><span>An item was swapped or removed. Base stats and set effects changed in ways
-                the tracker does not model, so re-read the stat sheet from the game.</span>
+            ${(() => {
+                const counts = UpgradeEngine.setCounts(items);
+                const raw = {};
+                Object.values(items).forEach(i => { if (i && i.set && i.set !== 'None') raw[i.set] = (raw[i.set] || 0) + 1; });
+                const sets = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+                return sets.length ? `<p class="upg-sets">Sets: ${sets.map(([set, n]) =>
+                    `<span>${sanitizeInput(set)} ${n}${n > (raw[set] || 0) ? ' <em>incl. lucky weapon</em>' : ''}</span>`).join('')}</p>` : '';
+            })()}
+            ${build.statsStale ? `<div class="upg-stale"><span>An item without known base stats was swapped or removed, so the
+                tracker could not price the change. Re-read the stat sheet from the game.</span>
                 <button class="prog-reset" onclick="clearUpgradeStatsStale()">Dismiss</button></div>` : ''}
             <div class="prog-table-wrap">
                 <table class="prog-table upg-table">
@@ -996,6 +1022,43 @@ function renderUpgradeRecorder(character, build) {
         </div>`;
 }
 
+/** Item swaps, best final damage first. Kept apart from the meso plan: the items come from drops and pieces. */
+function renderUpgradeSwaps(character, build) {
+    if (!build.items || !Object.keys(build.items).length) return '';
+    if (!UpgradeEngine.damageIndex(UpgradeEngine.normalizeStats(build.stats))) return '';
+    const open = upgradeSectionOpen('swaps');
+    const swaps = open ? UpgradeEngine.swapOptions(build, characterUpgradeSettings(character),
+        { charLevel: getCharLevel(character) }) : [];
+    return `
+        <div class="upg-card ${open ? '' : 'upg-collapsed'}">
+            <div class="upg-plan-head"><div class="upg-head-title">
+                ${upgradeSectionToggle('swaps', 'Item swaps', open)}
+                ${open ? '' : '<span class="upg-sub">replacements and set changes</span>'}
+            </div></div>
+            <p class="upg-note">Replacing an item, priced with its own stats and the change in set bonuses across your
+                gear. The new item is starred to your star force target and keeps the current potential and flames, so the
+                gain is the item itself. A Genesis or Destiny weapon counts toward any other set where you wear 3 pieces,
+                which is why a single piece of a new set can be a loss and the whole set a gain.</p>
+            ${swaps.length ? `
+            <div class="prog-table-wrap">
+                <table class="prog-table upg-table">
+                    <thead><tr><th>Swap</th><th>Sets</th><th>FD gain</th><th>Mesos to star it</th><th>Get it from</th></tr></thead>
+                    <tbody>
+                    ${swaps.slice(0, 15).map(o => `
+                        <tr>
+                            <td>${o.whole ? '<span class="upg-type upg-type-cube">Whole set</span> ' : ''}${sanitizeInput(o.from)}
+                                <span class="upg-sub">→ ${sanitizeInput(o.to)} ${o.stars ? `${o.stars}★` : ''}</span></td>
+                            <td class="upg-sub">${sanitizeInput(o.sets)}</td>
+                            <td class="upg-gain">+${o.fdGain.toFixed(2)}%</td>
+                            <td>${o.cost ? fmtMeso(o.cost) : '—'}</td>
+                            <td class="upg-sub">${sanitizeInput(o.via)}</td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>` : '<p class="upg-empty">No catalog item beats what is equipped.</p>'}
+        </div>`;
+}
+
 function renderUpgradePlan(character, build) {
     if (!build.items || !Object.keys(build.items).length) return '';
     const stats = UpgradeEngine.normalizeStats(build.stats);
@@ -1176,6 +1239,7 @@ function renderUpgradesContent() {
                     or run <code>npm start</code> and open <code>http://127.0.0.1:8777</code>.</span></div>` : ''}
             </div>
             ${renderUpgradePlan(character, build)}
+            ${renderUpgradeSwaps(character, build)}
             ${renderUpgradeStats(character, build)}
             ${renderUpgradeInventory(character, build)}
             ${renderUpgradeSettings()}
