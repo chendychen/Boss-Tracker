@@ -571,3 +571,26 @@ describe('lucky weapon scope', () => {
         assert.equal(c['Arcane Umbra'], 4);
     });
 });
+
+describe('swap break-even star force', () => {
+    const cat = name => E.GEAR_CATALOG.find(g => g.name === name);
+    const item = (slot, name, stars = 22) => ({ ...E.newItem(slot, cat(name)), stars });
+    const items = {
+        weapon: { ...E.newItem('weapon', cat('Genesis Weapon')), baseStats: { int: 150, luk: 150, matt: 406 } },
+        hat: item('hat', 'CRA Hat', 21), top: item('top', 'CRA Top', 21), bottom: item('bottom', 'CRA Bottom', 21),
+    };
+    const build = { className: 'Ice/Lightning', stats: { ...SHEET, att: 3000 }, items };
+
+    test('the whole-set swap breaks even at the first star where it stops losing', () => {
+        const whole = E.swapOptions(build, {}, { charLevel: 280 }).find(o => o.whole && /Eternal/.test(o.to));
+        assert.ok(whole && whole.breakEven, 'expected a break-even');
+        const at = star => E.fdGain(E.analysisStats(build, {}), E.swapDeltaMany(items, {
+            hat: item('hat', 'Eternal Hat', star), top: item('top', 'Eternal Top', star), bottom: item('bottom', 'Eternal Bottom', star),
+        }, 'Ice/Lightning', 280));
+        const be = whole.breakEven.stars;
+        assert.ok(be > 0 && be <= whole.stars);
+        assert.ok(at(be) >= 0, `gain at ${be}★`);
+        assert.ok(at(be - 1) < 0, `gain at ${be - 1}★`);
+        assert.ok(whole.breakEven.cost < whole.cost);
+    });
+});

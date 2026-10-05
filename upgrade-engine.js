@@ -1365,6 +1365,31 @@
         const swappable = (slot, current) => current && !current.locked && slot !== 'weapon' && baseKnown(current);
         const out = [];
 
+        /**
+         * The lowest star force at which the new items stop being a loss
+         * (every changed piece at the same star), and the mesos to get there.
+         * Gain rises with stars, so the first star that breaks even is the
+         * answer. Items that cannot be starred break even at their own stars
+         * or not at all.
+         */
+        const breakEven = changes => {
+            const pieces = Object.values(changes);
+            const starrable = pieces.filter(n => n.sfKind === 'ordinary');
+            if (!starrable.length) return null;
+            const top = Math.max(...starrable.map(n => n.stars));
+            for (let star = 0; star <= top; star++) {
+                const at = {};
+                for (const [sl, n] of Object.entries(changes)) {
+                    at[sl] = n.sfKind === 'ordinary' ? { ...n, stars: Math.min(star, n.stars) } : n;
+                }
+                const delta = swapDeltaMany(items, at, build.className, charLevel);
+                if (delta && fdGain(stats, delta, pdr) >= 0) {
+                    return { stars: star, cost: Object.values(at).reduce((a, n) => a + starCost(n), 0) };
+                }
+            }
+            return null;
+        };
+
         for (const [slot, current] of Object.entries(items)) {
             if (!swappable(slot, current)) continue;
             for (const entry of GEAR_CATALOG) {
@@ -1378,7 +1403,7 @@
                 out.push({
                     type: 'swap', slots: [slot], from: current.name, to: entry.name, stars: next.stars,
                     fdGain: gain, cost: starCost(next), via: VIA[entry.set] || 'drop',
-                    sets: describeSetChange(items, slot, next),
+                    sets: describeSetChange(items, slot, next), breakEven: breakEven({ [slot]: next }),
                 });
             }
         }
@@ -1409,6 +1434,7 @@
                     to: `${toSet} ${moved.join(', ')}`, stars: Object.values(changes)[0].stars,
                     fdGain: gain, cost: Object.values(changes).reduce((a, n) => a + starCost(n), 0),
                     via: VIA[toSet] || 'drop', sets: describeSetChange(items, changes), whole: true,
+                    breakEven: breakEven(changes),
                 });
             }
         }

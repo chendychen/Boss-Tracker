@@ -1036,19 +1036,23 @@ function renderUpgradeSwaps(character, build) {
                 ${open ? '' : '<span class="upg-sub">replacements and set changes</span>'}
             </div></div>
             <p class="upg-note">Replacing an item, priced with its own stats and the change in set bonuses across your
-                gear. The new item is starred to your star force target and keeps the current potential and flames, so the
+                gear. Break-even is the lowest star force at which the new items stop being a loss; below it, keep what you
+                wear. The new item is starred to your star force target and keeps the current potential and flames, so the
                 gain is the item itself. A Genesis or Destiny weapon counts toward any other set where you wear 3 pieces,
                 which is why a single piece of a new set can be a loss and the whole set a gain.</p>
             ${swaps.length ? `
             <div class="prog-table-wrap">
                 <table class="prog-table upg-table">
-                    <thead><tr><th>Swap</th><th>Sets</th><th>FD gain</th><th>Mesos to star it</th><th>Get it from</th></tr></thead>
+                    <thead><tr><th>Swap</th><th>Sets</th><th title="The lowest star force at which the new item stops being a loss, every piece at the same star">Break-even</th>
+                        <th>FD gain at target</th><th>Mesos to target</th><th>Get it from</th></tr></thead>
                     <tbody>
                     ${swaps.slice(0, 15).map(o => `
                         <tr>
                             <td>${o.whole ? '<span class="upg-type upg-type-cube">Whole set</span> ' : ''}${sanitizeInput(o.from)}
                                 <span class="upg-sub">→ ${sanitizeInput(o.to)} ${o.stars ? `${o.stars}★` : ''}</span></td>
                             <td class="upg-sub">${sanitizeInput(o.sets)}</td>
+                            <td>${o.breakEven ? `<strong>${o.breakEven.stars}★</strong>
+                                <span class="upg-sub">${o.breakEven.cost ? fmtMeso(o.breakEven.cost) : 'no star force needed'}</span>` : '—'}</td>
                             <td class="upg-gain">+${o.fdGain.toFixed(2)}%</td>
                             <td>${o.cost ? fmtMeso(o.cost) : '—'}</td>
                             <td class="upg-sub">${sanitizeInput(o.via)}</td>
