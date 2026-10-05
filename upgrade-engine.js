@@ -29,6 +29,7 @@
         sfMaxStar: 22,             // target cap for items without their own
         mvpDiscount: 0,            // % off star force up to 16→17★ (Silver 3, Gold 5, Diamond 10)
         cdrCurve: null,            // per-character cooldown curve (see CDR_CURVES); null = linear cdrValue
+        skillIed: 0,               // per-character IED from skills, % (see solveSkillIed)
         cdrValue: 0.7,             // % final damage per second of hat cooldown reduction
         // How much IED lines count when choosing cube targets: 0 ignores them,
         // 1 is their full damage value. Stacked IED has sharply diminishing
@@ -59,6 +60,10 @@
             att: n(s.att), attPct: n(s.attPct),
             dmg: n(s.dmg), boss: n(s.boss),
             critDmg: n(s.critDmg), ied: n(s.ied), fd: n(s.fd),
+            // IED the class's skills add on top of the stat window's figure.
+            // The stat window leaves it out, so without it IED lines and IED
+            // set bonuses are overvalued for classes whose skills ignore a lot.
+            skillIed: n(s.skillIed),
             cdr: n(s.cdr),
             // Final damage per second of skill cooldown reduction. Cooldown has
             // no place in the damage formula, so it is valued as the extra
@@ -101,7 +106,7 @@
         const attack = s.att * (1 + s.attPct / 100);
         const dmgMult = 1 + (s.dmg + s.boss) / 100;
         const critMult = 1.35 + s.critDmg / 100;
-        const defMult = Math.max(0, 1 - (pdr / 100) * (1 - s.ied / 100));
+        const defMult = Math.max(0, 1 - (pdr / 100) * (1 - s.ied / 100) * (1 - s.skillIed / 100));
         const fdMult = 1 + s.fd / 100;
         const cdrMult = s.cdrCurve ? 1 : 1 + (s.cdr * s.cdrValue) / 100;
         return statValue * attack * dmgMult * critMult * defMult * fdMult * cdrMult;
@@ -127,7 +132,7 @@
                     remaining = line > 0 ? remaining * f : remaining / f;
                 }
                 out.ied = 100 * (1 - remaining);
-            } else if (v && k in out && !['model', 'cdrValue', 'cdrCurve'].includes(k)) {
+            } else if (v && k in out && !['model', 'cdrValue', 'cdrCurve', 'skillIed'].includes(k)) {
                 out[k] += v;
             }
         }
@@ -939,7 +944,54 @@
             cdr: gearCdr(build.items, build.className),
             cdrValue: +s.cdrValue,
             cdrCurve: s.cdrCurve || null,
+            skillIed: +s.skillIed || 0,
         });
+    }
+
+    /**
+     * A class's skills from Grandis Library with whether each counts on top
+     * of the stat window. By default the "always up" passives are taken as
+     * already in the stat window, and everything conditional, unlocked or a
+     * debuff (plus stacking passives such as Arcane Aim) counts on top, except
+     * a full ignore that only lasts a moment (Radiant Soul).
+     * `chosen` (skill names) overrides the default selection.
+     */
+    function classSkillIedBreakdown(className, chosen = null) {
+        const tables = root.UpgradeEngine.TABLES;
+        const list = (tables && tables.CLASS_SKILL_IED[className]) || null;
+        if (!list) return null;
+        const set = Array.isArray(chosen) ? new Set(chosen) : null;
+        const skills = list.map(([name, value, kind]) => ({
+            name, value, kind,
+            counted: set ? set.has(name)
+                : !tables.WINDOW_ONLY.has(name) && (kind !== 'P' || tables.STACKING_PASSIVES.has(name)),
+        }));
+        const remaining = skills.filter(s => s.counted).reduce((r, s) => r * (1 - s.value / 100), 1);
+        return { skills, ied: Math.round((1 - remaining) * 1000) / 10 };
+    }
+
+    /**
+     * Skill IED that makes this sheet value a 40% equipment IED line the way
+     * MapleScouter does, relative to 40% boss damage. MapleScouter's stat
+     * efficiency panel prices both in ATT %; the units cancel in the ratio.
+     * Returns { skillIed, ratio, modelRatio } or null when the inputs make no
+     * sense. A ratio at or above what the sheet gives with no skill IED means
+     * no skill IED (it cannot be negative).
+     */
+    function solveSkillIed(stats, bossPer40, iedPer40, pdr = DEFAULT_PDR) {
+        const ratio = iedPer40 / bossPer40;
+        if (!(ratio > 0) || !isFinite(ratio)) return null;
+        const base = normalizeStats(stats);
+        const boss = fdGain(base, { boss: 40 }, pdr);
+        const at = skill => fdGain({ ...base, skillIed: skill }, { ied: [40] }, pdr) / boss;
+        const modelRatio = at(0);
+        if (ratio >= modelRatio) return { skillIed: 0, ratio, modelRatio };
+        let lo = 0, hi = 99.9;
+        for (let i = 0; i < 60; i++) {
+            const mid = (lo + hi) / 2;
+            if (at(mid) > ratio) lo = mid; else hi = mid;
+        }
+        return { skillIed: Math.round(((lo + hi) / 2) * 10) / 10, ratio, modelRatio };
     }
 
     /**
@@ -1608,7 +1660,7 @@
         collapsePool, cubeOutcomes, cubeThresholds,
         sfStep, sfSteps, sfDelta, flameOutcomes, recommend, buildPlan,
         flameScore, itemContribution, restatItem, lineStatsForSlot, lineValuesFor, LINE_LABELS,
-        describeClass, STAT_NAMES, describeLines, weighIed, lineSetScorer, CDR_CURVES, cdrCurveAt, gearCdr, analysisStats, targetUnit, lineEquivalent, scoreThresholds, equivalenceLegend,
+        describeClass, STAT_NAMES, describeLines, weighIed, lineSetScorer, solveSkillIed, classSkillIedBreakdown, CDR_CURVES, cdrCurveAt, gearCdr, analysisStats, targetUnit, lineEquivalent, scoreThresholds, equivalenceLegend,
         GEAR_CATALOG, STANDARD_SLOTS, newItem,
         setCounts, setDelta, baseDelta, baseKnown, itemFull, swapDelta, swapDeltaMany, describeSetChange, swapOptions,
     });

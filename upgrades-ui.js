@@ -533,6 +533,8 @@ function renderUpgradeStats(character, build) {
     const stats = UpgradeEngine.normalizeStats(build.stats);
     // Open by default only while there is no gear, when the sheet is the next step.
     const statsOpen = upgradeSectionOpen('stats', !(build.items && Object.keys(build.items).length));
+    const src = character.skillIedSource;
+    const grandis = UpgradeEngine.classSkillIedBreakdown(getCharClass(character), character.skillIedSkills);
     return `
         <details class="upg-card" ${statsOpen ? 'open' : ''}
                  ontoggle="onUpgradeDetailsToggle('stats', this.open, ${statsOpen})">
@@ -540,6 +542,35 @@ function renderUpgradeStats(character, build) {
             <p class="upg-note">Values from the in-game stat window with your usual bossing buffs.
                 Only ratios matter, so small errors shift every upgrade alike.</p>
             <div class="prog-setup">
+                <div class="prog-field">
+                    <label>IED from skills %</label>
+                    <input type="number" step="0.1" min="0" max="99" value="${character.skillIed ?? ''}"
+                           placeholder="${grandis ? grandis.ied : 0}" onchange="setUpgradeSkillIed(this.value)">
+                    <span class="upg-hint">${character.skillIed !== null && character.skillIed !== undefined
+                        ? (src ? `from MapleScouter ${src.bd} / ${src.ied} (${src.at})` : 'typed in')
+                          + (grandis ? ` · <a href="#" onclick="event.preventDefault(); useGrandisSkillIed()">use Grandis (${grandis.ied}%)</a>` : '')
+                        : grandis ? 'from Grandis Library, skills below' : 'no Grandis data for this class'}</span>
+                </div>
+                ${grandis && grandis.skills.length ? `
+                <div class="prog-field prog-field-wide upg-skill-ied">
+                    <label>Grandis Library skills · tick the ones not already in your stat window</label>
+                    <div class="upg-checks">
+                        ${grandis.skills.map(sk => `
+                            <label class="upg-check" title="${({ P: 'Always or nearly always up; usually already in the stat window', T: 'Conditional or on a cooldown', U: 'Unlocked: hyper, 5th job or a buff', D: 'A debuff on the enemy' })[sk.kind]}">
+                                <input type="checkbox" ${sk.counted ? 'checked' : ''}
+                                       onchange="toggleSkillIedSkill('${sk.name.replace(/'/g, "\\'")}', this.checked)">
+                                ${sanitizeInput(sk.name)} ${sk.value}% <span class="upg-sub">${({ P: 'passive', T: 'conditional', U: 'unlocked', D: 'debuff' })[sk.kind]}</span>
+                            </label>`).join('')}
+                    </div>
+                </div>` : ''}
+                <div class="prog-field upg-calibrate">
+                    <label>Calibrate from MapleScouter's Stat Efficiency</label>
+                    <div class="upg-line">
+                        <input type="number" step="0.1" id="scouterBd40" placeholder="ATT per 40% BD" value="${src ? src.bd : ''}">
+                        <input type="number" step="0.1" id="scouterIed40" placeholder="ATT per 40% EQP ID" value="${src ? src.ied : ''}">
+                        <button class="save-btn" onclick="calibrateSkillIed()">Set</button>
+                    </div>
+                </div>
                 ${upgradeStatFields(build.className).map(([k, label]) => `
                     <div class="prog-field">
                         <label>${label}</label>
@@ -563,8 +594,61 @@ function upgradeLinesWorth(stats, delta) {
  */
 function characterUpgradeSettings(character) {
     const usesCdr = !character || character.usesCdrHat !== false;
-    if (!usesCdr) return { ...upgradeSettings, cdrValue: 0, cdrCurve: null };
-    return { ...upgradeSettings, cdrCurve: characterCdrCurve(character) };
+    const skillIed = character ? getCharSkillIed(character) : 0;
+    if (!usesCdr) return { ...upgradeSettings, cdrValue: 0, cdrCurve: null, skillIed };
+    return { ...upgradeSettings, cdrCurve: characterCdrCurve(character), skillIed };
+}
+
+function setUpgradeSkillIed(value) {
+    const character = getActiveCharacter();
+    if (!character) return;
+    const v = parseFloat(value);
+    character.skillIed = isFinite(v) && v >= 0 ? Math.min(99, v) : null;
+    if (character.skillIed === null) character.skillIedSource = null;
+    saveToLocalStorage();
+    renderUpgradesContent();
+}
+
+/** Ticks or unticks one Grandis skill; clears any typed or calibrated value so the list is used. */
+function toggleSkillIedSkill(name, on) {
+    const character = getActiveCharacter();
+    if (!character) return;
+    const cls = getCharClass(character);
+    const now = UpgradeEngine.classSkillIedBreakdown(cls, character.skillIedSkills);
+    if (!now) return;
+    const chosen = new Set(now.skills.filter(s => s.counted).map(s => s.name));
+    if (on) chosen.add(name); else chosen.delete(name);
+    character.skillIedSkills = [...chosen];
+    character.skillIed = null;
+    character.skillIedSource = null;
+    saveToLocalStorage();
+    renderUpgradesContent();
+}
+
+function useGrandisSkillIed() {
+    const character = getActiveCharacter();
+    if (!character) return;
+    character.skillIed = null;
+    character.skillIedSource = null;
+    character.skillIedSkills = null;
+    saveToLocalStorage();
+    renderUpgradesContent();
+}
+
+/** Fills skill IED from MapleScouter's stat efficiency panel (ATT % per 40% BD and per 40% EQP ID). */
+function calibrateSkillIed() {
+    const character = getActiveCharacter();
+    const build = character && character.upgradeBuild;
+    if (!build) return;
+    const bd = parseFloat(document.getElementById('scouterBd40').value);
+    const ied = parseFloat(document.getElementById('scouterIed40').value);
+    const stats = UpgradeEngine.analysisStats(build, { ...characterUpgradeSettings(character), skillIed: 0 });
+    const fit = UpgradeEngine.solveSkillIed(stats, bd, ied, upgradeSettings.pdr);
+    if (!fit) { alert('Enter both numbers from MapleScouter\'s Stat Efficiency panel.'); return; }
+    character.skillIed = fit.skillIed || null;
+    character.skillIedSource = { bd, ied, at: new Date().toISOString().slice(0, 10) };
+    saveToLocalStorage();
+    renderUpgradesContent();
 }
 
 /** The character's own cooldown curve, else its class preset, else none. */

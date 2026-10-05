@@ -619,3 +619,48 @@ describe('whole-set swaps piece by piece', () => {
         assert.match(loss.sets, /CRA 4→2/);
     });
 });
+
+describe('skill IED', () => {
+    test('skill IED stacks with the stat window and cuts what an IED line is worth', () => {
+        const plain = E.fdGain({ ...SHEET, ied: 95 }, { ied: [40] });
+        const withSkill = E.fdGain({ ...SHEET, ied: 95, skillIed: 50 }, { ied: [40] });
+        assert.ok(withSkill < plain / 1.5, `${withSkill} vs ${plain}`);
+        // stat 95% and skill 50% together leave 2.5% of defense standing
+        near(E.damageIndex({ ...SHEET, ied: 95, skillIed: 50 }) / E.damageIndex({ ...SHEET, ied: 97.5 }), 1, 1e-12);
+    });
+
+    test('calibration reproduces MapleScouter\'s IED to boss damage ratio', () => {
+        const stats = { ...SHEET, ied: 96.33 };
+        const fit = E.solveSkillIed(stats, 7.9, 3.5, 380);
+        const ratio = E.fdGain({ ...stats, skillIed: fit.skillIed }, { ied: [40] }, 380) / E.fdGain(stats, { boss: 40 }, 380);
+        near(ratio, 3.5 / 7.9, 0.01);
+        assert.ok(fit.skillIed > 0);
+    });
+
+    test('a ratio above what the sheet gives means no skill IED', () => {
+        assert.equal(E.solveSkillIed({ ...SHEET, ied: 90 }, 5, 50, 380).skillIed, 0);
+    });
+});
+
+describe('skill IED from Grandis Library', () => {
+    test('passives are taken as already in the stat window, the rest count on top', () => {
+        const bm = E.classSkillIedBreakdown('Bowmaster');
+        assert.equal(bm.ied, 5);
+        assert.deepEqual([...bm.skills.filter(s => s.counted).map(s => s.name)], ['Sharp Eyes - Guardbreak']);
+    });
+
+    test('stacking passives count, and match MapleScouter for Ice/Lightning', () => {
+        const il = E.classSkillIedBreakdown('Ice/Lightning');
+        near(il.ied, 54.1, 0.05);                      // MapleScouter calibration gave 51.7%
+    });
+
+    test('a moment of full ignore is left out by default', () => {
+        assert.ok(E.classSkillIedBreakdown('Mihile').ied < 50);
+    });
+
+    test('a chosen list overrides the default', () => {
+        near(E.classSkillIedBreakdown('Corsair', ['Fullmetal Jacket', "Pirate's Banner"]).ied, 40, 1e-9);
+        assert.equal(E.classSkillIedBreakdown('Corsair', []).ied, 0);
+        assert.equal(E.classSkillIedBreakdown('Not A Class'), null);
+    });
+});

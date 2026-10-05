@@ -274,6 +274,76 @@
         return Math.ceil(baseAtt * (Math.floor(itemLevel / 40) + 1) * tier * Math.pow(1.1, tier - shift) / 100);
     }
 
+    // ── Skill IED by class ───────────────────────────────────────────────────
+    // From Grandis Library's class overviews ("Base Stats (From Skills)",
+    // Ignore DEF row), read 2026-10-05: [skill, IED %, kind], where kind is
+    // P always or nearly always up, T conditional or on a cooldown,
+    // U unlocked (hyper, 5th job, buffs), D a debuff on the enemy.
+    // Per-stack skills are at their maximum; Freezing Breath uses its MDR
+    // (30%) since Ice/Lightning hits with magic. Blaster and Lynn list none;
+    // Dual Blade lists +0%.
+    const CLASS_SKILL_IED = {
+        'Hero': [['Combat Mastery', 50, 'P'], ['Weapon Aura', 16, 'U']],
+        'Paladin': [['High Paladin', 31, 'P'], ['Noble Demand', 50, 'D'], ['Weapon Aura', 16, 'U']],
+        'Dark Knight': [['Dark Resonance - Passive', 30, 'P'], ['Dark Resonance', 10, 'T'], ['Weapon Aura', 16, 'U']],
+        'Bishop': [['Arcane Aim', 20, 'P'], ['Righteously Indignant - Passive', 20, 'P'], ['Angelic Wrath', 44, 'D'], ['Empirical Knowledge', 9, 'D']],
+        'Ice/Lightning': [['Arcane Aim', 20, 'P'], ['Empirical Knowledge', 9, 'D'], ['Freezing Breath', 30, 'D'], ['Shatter', 10, 'T']],
+        'Fire/Poison': [['Arcane Aim', 20, 'P'], ['Empirical Knowledge', 9, 'D']],
+        'Dual Blade': [],
+        'Shadower': [['Shadower Instinct', 20, 'P']],
+        'Night Lord': [['Dark Harmony', 30, 'P'], ['Frailty Curse', 30, 'U']],
+        'Pathfinder': [["Archer's Essence", 30, 'P']],
+        'Marksman': [['Marksmanship', 25, 'P'], ['Greater Empowered Arrows', 20, 'P'], ['Arrow Illusion', 30, 'P'], ['Greater Empowered Arrows (stacks)', 13, 'T'], ['Bullseye Shot', 20, 'T']],
+        'Bowmaster': [['Marksmanship', 25, 'P'], ['Armor Break', 40, 'P'], ['Sharp Eyes - Guardbreak', 5, 'U']],
+        'Cannoneer': [['Cannon Overload', 20, 'P'], ["Pirate's Banner", 25, 'U']],
+        'Buccaneer': [['Typhoon Crush', 40, 'P'], ["Pirate's Banner", 25, 'U']],
+        'Corsair': [['Fullmetal Jacket', 20, 'P'], ["Pirate's Banner", 25, 'U']],
+        'Dawn Warrior': [['Soul Element', 10, 'P'], ['Unpredictable', 30, 'P'], ['True Sight', 10, 'U'], ['Weapon Aura', 16, 'U']],
+        'Thunder Breaker': [['Thunder God', 45, 'T']],
+        'Night Walker': [['Dark Blessing', 15, 'P'], ['Adaptive Darkness III', 35, 'D']],
+        'Wind Archer': [['Pinpoint Pierce', 15, 'P'], ['Albatross Max', 15, 'P'], ['Emerald Dust', 10, 'D']],
+        'Blaze Wizard': [['Fires of Creation', 30, 'P']],
+        'Mihile': [['Combat Mastery', 40, 'P'], ['Radiant Soul', 100, 'T'], ['Weapon Aura', 16, 'U']],
+        'Aran': [['Cleaving Attack', 40, 'P'], ['Weapon Aura', 16, 'U']],
+        'Evan': [['Dragon Potential', 20, 'P']],
+        'Luminous': [['Arcane Pitch - Passive', 40, 'P'], ['Light Wash', 15, 'P']],
+        'Mercedes': [['Defense Break', 25, 'P'], ['Spikes Royale', 30, 'D']],
+        'Phantom': [["Priere D'Aria", 30, 'P'], ['Tempest', 20, 'D']],
+        'Shade': [['Weaken', 20, 'P'], ['Spirit Bond 4', 30, 'P']],
+        'Blaster': [],
+        'Battle Mage': [['Spell Boost', 30, 'P'], ['Weakening Aura', 20, 'D']],
+        'Wild Hunter': [['Wild Instinct', 40, 'P']],
+        'Mechanic': [['Overclock', 30, 'P'], ['Support Unit: H-EX', 10, 'D']],
+        'Xenon': [['Offensive Matrix', 30, 'P'], ['Core Overload', 30, 'T']],
+        'Demon Slayer': [['Binding Darkness - Passive', 30, 'P'], ['Demon Cry', 15, 'D'], ['Weapon Aura', 16, 'U']],
+        'Demon Avenger': [['Overwhelming Power', 30, 'P'], ['Nether Slice', 30, 'D'], ['Weapon Aura', 16, 'U']],
+        'Kaiser': [['Unbreakable Will', 40, 'P'], ['Weapon Aura', 16, 'U']],
+        'Kain': [['Natural Born Instinct', 10, 'P'], ['Dogma', 30, 'P']],
+        'Cadena': [['Keen Eye', 20, 'P'], ['Summon Daggers', 30, 'D']],
+        'Angelic Buster': [['Dragon Whistle', 16, 'P'], ['Final Contract', 30, 'T'], ['Finale Ribbon - Armorbreak', 15, 'U']],
+        'Hayato': [['Cleaver', 35, 'P'], ['Akatsuki Samurai', 20, 'T'], ['Weapon Aura', 16, 'U']],
+        'Kanna': [['Summon Tengu', 30, 'T']],
+        'Ren': [['Eyes Unclouded', 40, 'P'], ['Weapon Aura', 16, 'U']],
+        'Adele': [['Will to Live', 10, 'P'], ['Tolerance', 10, 'P'], ['Ruination', 20, 'P'], ['Grave Proclamation', 10, 'D'], ['Weapon Aura', 16, 'U']],
+        'Illium': [['Wisdom of the Crystal', 25, 'P'], ['Umbral Brand III', 20, 'D']],
+        'Khali': [['Intuition', 20, 'P'], ['Redemption', 20, 'P']],
+        'Ark': [['Complete Fusion', 30, 'P'], ['Abyssal Charge Drive - Spell Bullet', 20, 'T']],
+        'Hoyoung': [['Bravado', 10, 'P'], ['Asura', 10, 'P'], ["Dragon's Eye", 10, 'P'], ['Scroll: Degeneration', 20, 'D']],
+        'Lara': [['Insight', 40, 'P'], ['Arbor Away', 15, 'D']],
+        'Lynn': [],
+        'Mo Xuan': [['Aura', 30, 'P'], ['Boundless', 20, 'P'], ['Power of Destiny', 30, 'U']],
+        'Sia': [['Astral Infinity', 30, 'P'], ['Stellar III - Alchiba', 10, 'T'], ['Stellar XI - Sirius', 10, 'T']],
+        'Erel Light': [['Radiant Control', 40, 'P'], ['Weapon Aura', 16, 'U']],
+        'Zero': [["Rhinne's Blessing", 15, 'P'], ['Armor Split', 50, 'D'], ['Weapon Aura', 16, 'U'], ['Lapis Type 9', 30, 'U'], ['Long Sword Mastery', 30, 'P']],
+        'Kinesis': [['Critical Rush', 40, 'P'], ['Psychic Smash', 15, 'D']],
+    };
+    // Tagged "always up" but they build while attacking, so the stat window
+    // does not show them: counted on top by default. Ice/Lightning only
+    // matches MapleScouter's valuation of IED (51.7%) with Arcane Aim counted.
+    const STACKING_PASSIVES = new Set(['Arcane Aim']);
+    // A full ignore for a few seconds; counting it would zero every IED line.
+    const WINDOW_ONLY = new Set(['Radiant Soul']);
+
     // ── Set effects ─────────────────────────────────────────────────────────
     // What each piece threshold adds (thresholds stack). Sources: maplestorywiki
     // set pages (Eternal, Arcane Umbra, AbsoLab, Root Abyss, Pitched Boss, Boss
@@ -302,7 +372,7 @@
 
     root.UpgradeEngine = Object.assign(root.UpgradeEngine || {}, {
         TABLES: {
-            SET_EFFECTS,
+            SET_EFFECTS, CLASS_SKILL_IED, STACKING_PASSIVES, WINDOW_ONLY,
             SF_RATES, SF_MODES, sfBaseCost, sfRecoverStar, sfMaxStars, sfStarGain,
             CUBE_POOLS, SLOT_POOL, cubePool, CUBES, CUBE_LIMITS, revealCost,
             FLAME_TIERS_ADVANTAGED, FLAME_TIERS_NORMAL, FLAME_LINES_NORMAL,

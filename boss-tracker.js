@@ -241,7 +241,10 @@ function serializeCharacter(char) {
         usesCdrHat: char.usesCdrHat !== false,
         cdrCurve: Array.isArray(char.cdrCurve) && char.cdrCurve.length ? char.cdrCurve : null,
         crystalsDone: char.crystalsDone || null,
-        hexaConverted: char.hexaConverted || null
+        hexaConverted: char.hexaConverted || null,
+        skillIed: (char.skillIed === null || char.skillIed === undefined || char.skillIed === '') ? null : char.skillIed,
+        skillIedSource: char.skillIedSource || null,
+        skillIedSkills: Array.isArray(char.skillIedSkills) ? char.skillIedSkills : null
     };
 }
 
@@ -288,7 +291,10 @@ function deserializeCharacter(char) {
         usesCdrHat: char.usesCdrHat !== false,
         cdrCurve: Array.isArray(char.cdrCurve) && char.cdrCurve.length ? char.cdrCurve : null,
         crystalsDone: char.crystalsDone || null,
-        hexaConverted: char.hexaConverted || null
+        hexaConverted: char.hexaConverted || null,
+        skillIed: (char.skillIed === null || char.skillIed === undefined || char.skillIed === '') ? null : char.skillIed,
+        skillIedSource: char.skillIedSource || null,
+        skillIedSkills: Array.isArray(char.skillIedSkills) ? char.skillIedSkills : null
     };
 }
 
@@ -1488,6 +1494,24 @@ function defenseMultiplier(pdr, ied) {
     return Math.max(0, 1 - (pdr / 100) * (1 - ied / 100));
 }
 
+/**
+ * IED from skills: the character's own value (typed or calibrated from
+ * MapleScouter) when set, otherwise the class default from Grandis Library.
+ */
+function getCharSkillIed(character) {
+    const own = parseFloat(character.skillIed);
+    if (isFinite(own)) return own;
+    const cls = character.className || (character.upgradeBuild && character.upgradeBuild.className);
+    const grandis = typeof UpgradeEngine !== 'undefined' && UpgradeEngine.classSkillIedBreakdown(cls, character.skillIedSkills);
+    return grandis ? grandis.ied : 0;
+}
+
+/** Stat-window IED combined with the class's skill IED. */
+function getCharTotalIed(character) {
+    const skill = getCharSkillIed(character);
+    return 100 * (1 - (1 - getCharIed(character) / 100) * (1 - skill / 100));
+}
+
 function getCharIed(character) {
     return (character.ied === null || character.ied === undefined) ? DEFAULT_IED : character.ied;
 }
@@ -1518,7 +1542,7 @@ function effectiveHP(baseName, difficulty, character) {
     const sacred = getCharSacred(character);
     const arcane = getCharArcane(character);
     const pdr = bossPdr(baseName, difficulty);
-    const dm = defenseMultiplier(pdr, getCharIed(character));
+    const dm = defenseMultiplier(pdr, getCharTotalIed(character));
 
     let blocked = null;
     const phases = data.ph.map((p, i) => {
@@ -1927,7 +1951,8 @@ function updateProgressionField(field, value) {
     } else if (field === 'calibParty') {
         character.calibParty = Math.max(1, parseInt(value, 10) || 1);
     } else if (field === 'manualDps' || field === 'ied' || field === 'calibPercent'
-            || field === 'executionFactor' || field === 'hexaConverted' || field === 'calibMinutes') {
+            || field === 'executionFactor' || field === 'hexaConverted' || field === 'calibMinutes'
+            || field === 'skillIed') {
         character[field] = value === '' ? null : parseFloat(value);
     } else {
         character[field] = value === '' ? null : parseInt(value, 10);
@@ -1999,7 +2024,8 @@ function renderProgressionPanel() {
             ${field('Character level', 'charLevel', getCharLevel(character), 'min="200" max="300"')}
             ${field('Sacred Force (blank = capped)', 'sacredForce', character.sacredForce || '', 'min="0" max="1000" placeholder="capped"')}
             ${field('Arcane Force (blank = 1350)', 'arcaneForce', character.arcaneForce || '', 'min="0" max="2000" placeholder="1350"')}
-            ${field('IED %', 'ied', getCharIed(character), 'min="0" max="100" step="0.1" placeholder="98"')}
+            ${field('IED % (stat window)', 'ied', getCharIed(character), 'min="0" max="100" step="0.1" placeholder="98"')}
+            ${field('IED from skills % (blank = class default)', 'skillIed', character.skillIed ?? '', `min="0" max="99" step="0.1" placeholder="${getCharSkillIed(Object.assign({}, character, { skillIed: null }))}"`)}
         </div>
         <div class="prog-setup">
             <div class="prog-group-label">MapleScouter estimate</div>
