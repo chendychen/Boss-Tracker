@@ -1408,6 +1408,57 @@
             }
         }
 
+        /**
+         * A whole-set move done one piece at a time, best next piece first.
+         * Each step is priced against the gear as it stands after the steps
+         * before it (those pieces at the target star), with its own
+         * break-even. A step can lose on its own when it crosses a set bonus
+         * threshold, most often when the old set falls below 3 pieces and a
+         * lucky weapon stops counting toward it; such a step only pays
+         * together with the next one.
+         */
+        const pieceByPiece = changes => {
+            let cur = { ...items };
+            let curStats = stats;
+            let mult = 1;
+            const steps = [];
+            let left = Object.keys(changes);
+            while (left.length) {
+                const scored = left.map(sl => {
+                    const delta = swapDeltaMany(cur, { [sl]: changes[sl] }, build.className, charLevel);
+                    return { sl, delta, gain: delta ? fdGain(curStats, delta, pdr) : -Infinity };
+                }).sort((a, b) => b.gain - a.gain);
+                const { sl, delta, gain } = scored[0];
+                if (!delta) return null;
+                const next = changes[sl];
+                let be = null;
+                if (next.sfKind === 'ordinary') {
+                    for (let star = 0; star <= next.stars; star++) {
+                        const d = swapDeltaMany(cur, { [sl]: { ...next, stars: star } }, build.className, charLevel);
+                        if (d && fdGain(curStats, d, pdr) >= 0) { be = star; break; }
+                    }
+                }
+                const before = setCounts(cur);
+                const raw = {};
+                Object.values(cur).forEach(i => { if (i && i.set && i.set !== 'None') raw[i.set] = (raw[i.set] || 0) + 1; });
+                const after = setCounts({ ...cur, [sl]: next });
+                const old = cur[sl] && cur[sl].set;
+                const luckyLost = old && before[old] > (raw[old] || 0) && (after[old] || 0) <= (raw[old] || 0) - 1;
+                mult *= 1 + gain / 100;
+                steps.push({
+                    slot: sl, from: cur[sl] && cur[sl].name, to: next.name, gain, breakEven: be,
+                    sets: describeSetChange(cur, sl, next), cumulative: (mult - 1) * 100,
+                    why: gain >= 0 ? '' : luckyLost
+                        ? `${old} falls below 3 pieces, so the lucky weapon stops counting toward it and its bonuses drop by two thresholds at once`
+                        : `it gives up more ${old || 'set'} bonus than it adds`,
+                });
+                curStats = applyDelta(curStats, delta);
+                cur = { ...cur, [sl]: next };
+                left = left.filter(x => x !== sl);
+            }
+            return steps;
+        };
+
         // Whole-set swaps: every armor piece of one set into another at once.
         // A set bonus often makes the first piece a loss and the full move a
         // gain (three CRA pieces held at 4 by a lucky weapon, say).
@@ -1434,7 +1485,7 @@
                     to: `${toSet} ${moved.join(', ')}`, stars: Object.values(changes)[0].stars,
                     fdGain: gain, cost: Object.values(changes).reduce((a, n) => a + starCost(n), 0),
                     via: VIA[toSet] || 'drop', sets: describeSetChange(items, changes), whole: true,
-                    breakEven: breakEven(changes),
+                    breakEven: breakEven(changes), steps: pieceByPiece(changes),
                 });
             }
         }

@@ -1027,3 +1027,11 @@ tr.upg-editor-row > td { background: var(--cds-layer-02); padding: var(--spacing
 .upg-sets { font-size: 0.8rem; color: var(--cds-text-secondary); margin: 0 0 var(--spacing-04); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .upg-sets span { background: var(--cds-layer-02); padding: 2px 8px; }
 .upg-sets em { color: #42be65; font-style: normal; font-size: 0.75rem; }
+tr.upg-swap-whole > td { border-bottom: none; }
+tr.upg-steps-row > td { padding-top: 0; }
+.upg-steps { font-size: 0.8rem; color: var(--cds-text-secondary); background: var(--cds-layer-02); padding: 6px 12px; }
+.upg-steps > summary { cursor: pointer; color: var(--cds-text-primary); }
+.upg-steps ol { margin: 6px 0 2px 18px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.upg-steps strong { color: var(--cds-text-primary); text-transform: capitalize; }
+.upg-step-loss { color: var(--cds-text-primary); }
+.upg-loss { color: #fa4d56; font-variant-numeric: tabular-nums; }

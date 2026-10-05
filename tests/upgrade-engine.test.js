@@ -594,3 +594,28 @@ describe('swap break-even star force', () => {
         assert.ok(whole.breakEven.cost < whole.cost);
     });
 });
+
+describe('whole-set swaps piece by piece', () => {
+    const cat = name => E.GEAR_CATALOG.find(g => g.name === name);
+    const item = (slot, name, stars = 22) => ({ ...E.newItem(slot, cat(name)), stars });
+    const items = {
+        weapon: { ...E.newItem('weapon', cat('Genesis Weapon')), baseStats: { int: 150, luk: 150, matt: 406 } },
+        hat: item('hat', 'CRA Hat', 22), top: item('top', 'CRA Top', 22), bottom: item('bottom', 'CRA Bottom', 22),
+    };
+    const build = { className: 'Ice/Lightning', stats: { ...SHEET, att: 3000 }, items };
+    // 22-star CRA against 22-star Eternals: the first piece out breaks CRA's lucky-held set.
+    const whole = E.swapOptions(build, {}, { charLevel: 280 }).find(o => o.whole && /Eternal/.test(o.to));
+
+    test('the steps compound to the whole-set gain', () => {
+        assert.equal(whole.steps.length, 3);
+        near(whole.steps[whole.steps.length - 1].cumulative, whole.fdGain, 1e-6);
+    });
+
+    test('a step that drops the lucky weapon is explained and has no break-even of its own', () => {
+        const loss = whole.steps.find(st => st.gain < 0);
+        assert.ok(loss, 'expected the first CRA piece out to lose on its own');
+        assert.equal(loss.breakEven, null);
+        assert.match(loss.why, /lucky weapon stops counting/);
+        assert.match(loss.sets, /CRA 4→2/);
+    });
+});

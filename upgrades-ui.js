@@ -1022,6 +1022,35 @@ function renderUpgradeRecorder(character, build) {
         </div>`;
 }
 
+/**
+ * A whole-set swap broken into single pieces, so it is clear why one piece
+ * can break even at a lower star than the full set, and which pieces only
+ * pay together.
+ */
+function renderSwapSteps(o) {
+    const firstBe = o.steps[0] && o.steps[0].breakEven;
+    const losing = o.steps.filter(st => st.gain < 0);
+    const lead = o.breakEven && firstBe !== null && firstBe < o.breakEven.stars
+        ? `The first piece breaks even at ${firstBe}★, sooner than the ${o.breakEven.stars}★ the whole set needs on every piece,
+           because moving everything also gives up the old set's lower bonuses.`
+        : '';
+    return `
+        <details class="upg-steps" ${losing.length ? 'open' : ''}>
+            <summary>Piece by piece${losing.length ? ' · one step loses on its own' : ''}</summary>
+            ${lead ? `<p class="upg-sub">${lead}</p>` : ''}
+            <ol>
+                ${o.steps.map(st => `
+                    <li class="${st.gain < 0 ? 'upg-step-loss' : ''}">
+                        <strong>${sanitizeInput(st.slot)}</strong>: ${sanitizeInput(st.from || '')} → ${sanitizeInput(st.to)}
+                        <span class="${st.gain >= 0 ? 'upg-gain' : 'upg-loss'}">${st.gain >= 0 ? '+' : ''}${st.gain.toFixed(2)}% at ${o.stars}★</span>
+                        · ${st.breakEven === null ? 'never breaks even on its own' : `break-even ${st.breakEven}★`}
+                        · <span class="upg-sub">${sanitizeInput(st.sets)} · running ${st.cumulative >= 0 ? '+' : ''}${st.cumulative.toFixed(2)}%</span>
+                        ${st.why ? `<div class="upg-sub">Loses alone: ${sanitizeInput(st.why)}. Only worth doing with the next piece.</div>` : ''}
+                    </li>`).join('')}
+            </ol>
+        </details>`;
+}
+
 /** Item swaps, best final damage first. Kept apart from the meso plan: the items come from drops and pieces. */
 function renderUpgradeSwaps(character, build) {
     if (!build.items || !Object.keys(build.items).length) return '';
@@ -1047,7 +1076,7 @@ function renderUpgradeSwaps(character, build) {
                         <th>FD gain at target</th><th>Mesos to target</th><th>Get it from</th></tr></thead>
                     <tbody>
                     ${swaps.slice(0, 15).map(o => `
-                        <tr>
+                        <tr class="${o.steps ? 'upg-swap-whole' : ''}">
                             <td>${o.whole ? '<span class="upg-type upg-type-cube">Whole set</span> ' : ''}${sanitizeInput(o.from)}
                                 <span class="upg-sub">→ ${sanitizeInput(o.to)} ${o.stars ? `${o.stars}★` : ''}</span></td>
                             <td class="upg-sub">${sanitizeInput(o.sets)}</td>
@@ -1056,7 +1085,8 @@ function renderUpgradeSwaps(character, build) {
                             <td class="upg-gain">+${o.fdGain.toFixed(2)}%</td>
                             <td>${o.cost ? fmtMeso(o.cost) : '—'}</td>
                             <td class="upg-sub">${sanitizeInput(o.via)}</td>
-                        </tr>`).join('')}
+                        </tr>
+                        ${o.steps ? `<tr class="upg-steps-row"><td colspan="6">${renderSwapSteps(o)}</td></tr>` : ''}`).join('')}
                     </tbody>
                 </table>
             </div>` : '<p class="upg-empty">No catalog item beats what is equipped.</p>'}
