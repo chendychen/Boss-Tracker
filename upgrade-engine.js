@@ -60,6 +60,10 @@
             att: n(s.att), attPct: n(s.attPct),
             dmg: n(s.dmg), boss: n(s.boss),
             critDmg: n(s.critDmg), ied: n(s.ied), fd: n(s.fd),
+            // Final damage from a liberated Genesis or Destiny weapon's skill.
+            // The stat window leaves it out, and it multiplies the other final
+            // damage rather than adding to it, so it is kept apart from fd.
+            weaponFd: n(s.weaponFd),
             // IED the class's skills add on top of the stat window's figure.
             // The stat window leaves it out, so without it IED lines and IED
             // set bonuses are overvalued for classes whose skills ignore a lot.
@@ -107,7 +111,7 @@
         const dmgMult = 1 + (s.dmg + s.boss) / 100;
         const critMult = 1.35 + s.critDmg / 100;
         const defMult = Math.max(0, 1 - (pdr / 100) * (1 - s.ied / 100) * (1 - s.skillIed / 100));
-        const fdMult = 1 + s.fd / 100;
+        const fdMult = (1 + s.fd / 100) * (1 + s.weaponFd / 100);
         const cdrMult = s.cdrCurve ? 1 : 1 + (s.cdr * s.cdrValue) / 100;
         return statValue * attack * dmgMult * critMult * defMult * fdMult * cdrMult;
     }
@@ -945,6 +949,7 @@
             cdrValue: +s.cdrValue,
             cdrCurve: s.cdrCurve || null,
             skillIed: +s.skillIed || 0,
+            weaponFd: weaponFdOf(build.items && build.items.weapon),
         });
     }
 
@@ -1187,7 +1192,8 @@
 
     // Common endgame gear. Replacement costs are the site's defaults and are
     // what a boom is charged at; everything is editable per item. `base` is
-    // the item's own stats ([stat on each class stat, ATT/MATT, Max HP]), read
+    // the item's own stats ([stat on each class stat, ATT/MATT, Max HP, other
+    // base stats such as boss or hpPct]), read
     // from Upgrade Tracker exports and maplestorywiki class pages; null where
     // unknown, which keeps the item out of swap suggestions. `via` is how the
     // item is obtained, for swaps.
@@ -1198,6 +1204,7 @@
         'AbsoLab': 'AbsoLab coins or boxes', 'CRA': 'Root Abyss drop or coins',
         'Pitched Boss': 'pitched boss drop', 'Dawn Boss': 'Dawn boss drop',
         'Superior Gollux': 'Gollux coins', 'Boss Accessory': 'boss drop',
+        'Brilliant Boss': 'Brilliant boss drop (Hard Limbo and later)',
     };
     const GEAR_CATALOG = [
         G('weapon', 'Genesis Weapon', 200, 'Eternal', 0, null, { sfKind: 'fixed', stars: 22, starCap: 22, lucky: true }),
@@ -1233,18 +1240,25 @@
         G('belt', 'Superior Engraved Gollux Belt', 150, 'Superior Gollux', 5e8, [25, 10, 300]),
         G('face', 'Berserked', 160, 'Pitched Boss', 8e9, [40, 10, 800]),
         G('face', 'Twilight Mark', 140, 'Dawn Boss', 5e9),
+        // Brilliant Boss: replacement cost is a placeholder at the pitched
+        // default; edit it per item.
+        G('face', 'Original Sin of Pride', 250, 'Brilliant Boss', 8e9, [15, 15, 0]),
+        G('eye', 'Starving Blood-Red Wraith', 250, 'Brilliant Boss', 8e9, [20, 5, 0]),
         G('eye', 'Magic Eyepatch', 160, 'Pitched Boss', 8e9, [30, 7, 500]),
         G('eye', 'Papulatus Mark', 145, 'Boss Accessory', 5e8, [8, 1, 0]),
         G('earring', 'Commanding Force Earring', 200, 'Pitched Boss', 8e9, [15, 5, 500]),
         G('earring', 'Estella Earrings', 160, 'Dawn Boss', 5e9),
         G('earring', 'Superior Gollux Earring', 150, 'Superior Gollux', 5e8, [15, 10, 300]),
         ...['pendant1', 'pendant2'].flatMap(s => [
+            G(s, 'Oath of Death', 250, 'Brilliant Boss', 8e9, [15, 5, 0, { hpPct: 5 }]),
             G(s, 'Source of Suffering', 160, 'Pitched Boss', 8e9, [10, 5, 500]),
             G(s, 'Daybreak Pendant', 140, 'Dawn Boss', 5e9, [8, 2, 0]),
             G(s, 'Superior Gollux Pendant', 150, 'Superior Gollux', 5e8, [28, 5, 300]),
             G(s, 'Dominator Pendant', 140, 'Boss Accessory', 5e8),
         ]),
         ...['ring1', 'ring2', 'ring3', 'ring4'].flatMap(s => [
+            G(s, 'Whisper of the Source', 250, 'Brilliant Boss', 8e9, [10, 5, 500]),
+            G(s, 'Blissful Nightmare', 250, 'Brilliant Boss', 8e9, [10, 5, 500]),
             G(s, 'Endless Terror', 200, 'Pitched Boss', 8e9, [5, 4, 250]),
             G(s, 'Dawn Guardian Angel Ring', 160, 'Dawn Boss', 5e9, [5, 2, 200]),
             G(s, 'Superior Gollux Ring', 150, 'Superior Gollux', 5e8, [10, 0, 300]),
@@ -1258,6 +1272,7 @@
         G('heart', 'Black Heart', 120, 'Pitched Boss', 0, [10, 77, 0], { sfKind: 'special', stars: 15, starCap: 15 }),
         G('heart', 'Plasma Heart', 130, 'None', 3e9, [10, 5, 0]),
         G('badge', 'Crystal Ventus Badge', 130, 'None', 0, [10, 5, 0]),
+        G('medal', 'Immortal Legacy', 250, 'Brilliant Boss', 0, [10, 10, 500, { boss: 10 }], { sfKind: 'special' }),
         G('medal', 'Medal', 1, 'None', 0),
     ];
     const STANDARD_SLOTS = ['weapon', 'secondary', 'emblem', 'hat', 'top', 'bottom', 'shoes', 'gloves',
@@ -1267,7 +1282,7 @@
     /** A fresh inventory item from a catalog entry (or a bare slot). */
     function newItem(slot, entry = null) {
         const e = entry || { slot, name: '', level: 200, set: 'None', replacementCost: 0, sfKind: 'ordinary' };
-        const [stat, att, hp] = e.base || [0, 0, 0];
+        const [stat, att, hp, other] = e.base || [0, 0, 0];
         const item = normalizeItem(slot, {
             name: e.name, itemLevel: e.level, equipmentSet: e.set, replacementCost: e.replacementCost,
             starforceItemKind: e.sfKind, currentStars: e.stars || 0, starforceCap: e.starCap || 0,
@@ -1275,7 +1290,7 @@
             isWSE: ['weapon', 'secondary', 'emblem'].includes(slot),
             potentialTier: /badge|medal/.test(slot) || e.sfKind === 'special' ? 'none' : 'legendary',
             potentialLines: [], potentialPhysicalLineCount: 3, locked: !!e.locked,
-            flames: {}, baseStats: { str: stat, dex: stat, int: stat, luk: stat, att, matt: att, hp },
+            flames: {}, baseStats: { str: stat, dex: stat, int: stat, luk: stat, att, matt: att, hp, ...(other || {}) },
         });
         item.baseKnown = !!e.base;
         return item;
@@ -1284,6 +1299,9 @@
     // ── Sets and item swaps ─────────────────────────────────────────────────
 
     const isLucky = item => !!item && (/genesis|destiny/i.test(item.name || '') || item.lucky);
+    // Genesis and Destiny weapons give their wearer a 10% final damage skill.
+    const GENESIS_FD = 10;
+    const weaponFdOf = weapon => (isLucky(weapon) ? GENESIS_FD : 0);
 
     // Sets that include a weapon. A lucky weapon only stands in for sets like
     // these: accessory sets (pitched, Gollux, Dawn, Brilliant, boss accessory)
@@ -1339,7 +1357,8 @@
         const b = item && item.baseStats;
         if (!b) return {};
         const cs = classStats(className);
-        return { mainBase: +b[cs.main] || 0, subBase: +b[cs.sub] || 0, att: +(cs.magic ? b.matt : b.att) || 0 };
+        return { mainBase: +b[cs.main] || 0, subBase: +b[cs.sub] || 0, att: +(cs.magic ? b.matt : b.att) || 0,
+            boss: +b.boss || 0, mainPct: cs.main === 'hp' ? +b.hpPct || 0 : 0 };
     }
 
     /** Whether an item's base stats are known well enough to price a swap. */
@@ -1352,7 +1371,8 @@
     /** Everything an item adds on its own: base, star force, potential, flames. */
     function itemFull(item, className, charLevel) {
         if (!item) return {};
-        return sumDeltas(baseDelta(item, className), itemContribution(item, className, charLevel));
+        return sumDeltas(baseDelta(item, className), itemContribution(item, className, charLevel),
+            { weaponFd: weaponFdOf(item) });
     }
 
     /**

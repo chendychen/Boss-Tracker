@@ -664,3 +664,43 @@ describe('skill IED from Grandis Library', () => {
         assert.equal(E.classSkillIedBreakdown('Not A Class'), null);
     });
 });
+
+describe('Brilliant Boss set and Genesis final damage', () => {
+    const cat = name => E.GEAR_CATALOG.find(g => g.name === name);
+    const brilliant = () => ({
+        face: E.newItem('face', cat('Original Sin of Pride')),
+        eye: E.newItem('eye', cat('Starving Blood-Red Wraith')),
+        ring1: E.newItem('ring1', cat('Whisper of the Source')),
+        ring2: E.newItem('ring2', cat('Blissful Nightmare')),
+        pendant1: E.newItem('pendant1', cat('Oath of Death')),
+        medal: E.newItem('medal', cat('Immortal Legacy')),
+    });
+
+    test('six Brilliant pieces give every threshold', () => {
+        const d = E.setDelta(brilliant(), 'Bowmaster');
+        assert.equal(d.mainBase, 100);
+        assert.equal(d.att, 100);
+        assert.equal(d.boss, 30);
+        assert.equal(d.critDmg, 12.5);
+        assert.deepEqual([...d.ied], [15]);
+    });
+
+    test('Immortal Legacy carries its 10% boss damage, Oath of Death its HP % for Demon Avenger', () => {
+        assert.equal(E.baseDelta(brilliant().medal, 'Bowmaster').boss, 10);
+        assert.equal(E.baseDelta(brilliant().pendant1, 'Demon Avenger').mainPct, 5);
+        assert.equal(E.baseDelta(brilliant().pendant1, 'Bowmaster').mainPct, 0);
+    });
+
+    test('a Genesis weapon adds 10% final damage on top of the sheet, lost when it is swapped away', () => {
+        const genesis = { ...E.newItem('weapon', cat('Genesis Weapon')), baseStats: { int: 150, luk: 150, matt: 406 } };
+        const build = { className: 'Ice/Lightning', stats: SHEET, items: { weapon: genesis } };
+        const st = E.analysisStats(build);
+        assert.equal(st.weaponFd, 10);
+        near(E.damageIndex(st) / E.damageIndex(SHEET), 1.1, 1e-12);
+        // Same base stats both sides, so only the liberation skill differs.
+        const known = it => ({ ...it, baseKnown: true });
+        const umbra = known({ ...E.newItem('weapon', cat('Arcane Umbra Weapon')), baseStats: genesis.baseStats });
+        build.items.weapon = known(genesis);
+        near(E.fdGain(st, E.swapDelta(build.items, 'weapon', umbra, 'Ice/Lightning', 280)), (1 / 1.1 - 1) * 100, 1e-9);
+    });
+});

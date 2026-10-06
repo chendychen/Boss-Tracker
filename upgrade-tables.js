@@ -347,9 +347,9 @@
     // ── Set effects ─────────────────────────────────────────────────────────
     // What each piece threshold adds (thresholds stack). Sources: maplestorywiki
     // set pages (Eternal, Arcane Umbra, AbsoLab, Root Abyss, Pitched Boss, Boss
-    // Accessory, Superior Gollux, Dawn Boss). all = all stats (flat),
-    // mainSub = primary and secondary stat, hp = flat Max HP. HP/MP % and DEF
-    // lines are left out. Brilliant Boss beyond 2 pieces is partial.
+    // Accessory, Superior Gollux, Dawn Boss, Brilliant Boss). all = all stats
+    // (flat), mainSub = primary and secondary stat, hp = flat Max HP. HP/MP %
+    // and DEF lines are left out.
     const SET_EFFECTS = {
         'Eternal': { 2: { att: 40, boss: 10 }, 3: { all: 50, att: 40, boss: 10 }, 4: { att: 40, boss: 10 },
             5: { att: 40, ied: 20 }, 6: { att: 40, boss: 15 }, 7: { all: 50, att: 40, boss: 15 }, 8: { att: 40, boss: 15 } },
@@ -367,7 +367,9 @@
         'Superior Gollux': { 2: { all: 20 }, 3: { att: 35 }, 4: { boss: 30, ied: 30 } },
         'Dawn Boss': { 2: { all: 10, att: 10, boss: 10, hp: 250 }, 3: { all: 10, att: 10, hp: 250 },
             4: { all: 10, att: 10, ied: 10, hp: 250 } },
-        'Brilliant Boss': { 2: { all: 20, att: 20, boss: 15, hp: 500 }, 3: { ied: 15 }, 4: { critDmg: 5 }, 5: { boss: 15 } },
+        'Brilliant Boss': { 2: { all: 20, att: 20, boss: 15, hp: 500 }, 3: { all: 20, att: 20, ied: 15, hp: 500 },
+            4: { all: 20, att: 20, critDmg: 5, hp: 500 }, 5: { all: 20, att: 20, boss: 15, hp: 500 },
+            6: { all: 20, att: 20, critDmg: 7.5, hp: 500 } },
     };
 
     root.UpgradeEngine = Object.assign(root.UpgradeEngine || {}, {

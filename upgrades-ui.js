@@ -541,6 +541,9 @@ function renderUpgradeStats(character, build) {
             <summary>Stat sheet</summary>
             <p class="upg-note">Values from the in-game stat window with your usual bossing buffs.
                 Only ratios matter, so small errors shift every upgrade alike.</p>
+            ${UpgradeEngine.analysisStats(build).weaponFd ? `<p class="upg-note">Your ${sanitizeInput(build.items.weapon.name || 'weapon')}'s
+                liberation skill adds ${UpgradeEngine.analysisStats(build).weaponFd}% final damage on top of the stat window,
+                which leaves it out. Swapping the weapon away loses it.</p>` : ''}
             <div class="prog-setup">
                 <div class="prog-field">
                     <label>IED from skills %</label>
