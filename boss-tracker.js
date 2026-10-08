@@ -1136,9 +1136,16 @@ const CRYSTALS_PER_ACCOUNT = 180;
 /**
  * Which crystals count this week. Each character sells at most its 14 most
  * valuable, and the account at most 180, taken from those per-character
- * picks by value. Everything else is overflow to drop.
+ * picks by value. Everything else is overflow to drop. Where the 180 cut
+ * falls among crystals of equal value, the characters highest in the roster
+ * drop theirs: 13 Gloom over the limit are dropped by the top 13.
  * @returns {{counted: object[], overflow: object[], accountLimitHit: boolean}}
  */
+/** Each character's position in the roster, top first. */
+function rosterOrder() {
+    return new Map(characters.map((c, i) => [c.id, i]));
+}
+
 function crystalSalePlan() {
     const all = getAllBossesWithValues();   // sorted by adjusted value, highest first
     const perCharacter = new Map();
@@ -1153,6 +1160,9 @@ function crystalSalePlan() {
             overflow.push({ ...b, reason: 'character' });
         }
     });
+    const rosterIndex = rosterOrder();
+    eligible.sort((a, b) => b.adjustedValue - a.adjustedValue
+        || rosterIndex.get(b.characterId) - rosterIndex.get(a.characterId));
     eligible.slice(CRYSTALS_PER_ACCOUNT).forEach(b => overflow.push({ ...b, reason: 'account' }));
     return {
         counted: eligible.slice(0, CRYSTALS_PER_ACCOUNT),
@@ -1320,11 +1330,13 @@ function renderSellingStrategy() {
         const label = `${b.difficulty} ${b.baseName}`;
         if (!byBoss[label]) byBoss[label] = { label, baseName: b.baseName, difficulty: b.difficulty,
                                                 adjustedValue: b.adjustedValue, chars: [] };
-        byBoss[label].chars.push({ name: b.characterName, partyCount: b.partyCount });
+        byBoss[label].chars.push({ id: b.characterId, name: b.characterName, partyCount: b.partyCount });
     });
 
-    // Sort groups by adjustedValue descending
+    // Sort groups by adjustedValue descending, and each group's characters top to bottom
     const groups = Object.values(byBoss).sort((a, b) => b.adjustedValue - a.adjustedValue);
+    const rosterIndex = rosterOrder();
+    groups.forEach(g => g.chars.sort((a, b) => rosterIndex.get(a.id) - rosterIndex.get(b.id)));
 
     const rows = groups.map(group => {
         const charTags = group.chars.map(c =>
