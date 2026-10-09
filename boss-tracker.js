@@ -241,6 +241,7 @@ function serializeCharacter(char) {
         usesCdrHat: char.usesCdrHat !== false,
         cdrCurve: Array.isArray(char.cdrCurve) && char.cdrCurve.length ? char.cdrCurve : null,
         crystalsDone: char.crystalsDone || null,
+        blackMage: char.blackMage || null,
         hexaConverted: char.hexaConverted || null,
         skillIed: (char.skillIed === null || char.skillIed === undefined || char.skillIed === '') ? null : char.skillIed,
         skillIedSource: char.skillIedSource || null,
@@ -291,6 +292,7 @@ function deserializeCharacter(char) {
         usesCdrHat: char.usesCdrHat !== false,
         cdrCurve: Array.isArray(char.cdrCurve) && char.cdrCurve.length ? char.cdrCurve : null,
         crystalsDone: char.crystalsDone || null,
+        blackMage: char.blackMage || null,
         hexaConverted: char.hexaConverted || null,
         skillIed: (char.skillIed === null || char.skillIed === undefined || char.skillIed === '') ? null : char.skillIed,
         skillIedSource: char.skillIedSource || null,
@@ -1141,13 +1143,91 @@ const CRYSTALS_PER_ACCOUNT = 180;
  * drop theirs: 13 Gloom over the limit are dropped by the top 13.
  * @returns {{counted: object[], overflow: object[], accountLimitHit: boolean}}
  */
+// Black Mage is a monthly boss, so its crystal only counts in the week a
+// character runs it, set per character in the Selling Strategy checklist
+// rather than from the weekly boss picks.
+const BLACK_MAGE = 'Black Mage';
+
+/** The current month for monthly bosses, which reset on the 1st at 00:00 UTC. */
+function currentMonth(now = new Date()) {
+    return now.toISOString().slice(0, 7);
+}
+
+/**
+ * A character's Black Mage this month: the difficulty (Hard unless chosen),
+ * whether it is run this week, and whether it is done for the month, either
+ * ticked by hand or finished in this week's checklist (`doneByRun`).
+ */
+function getBlackMage(character) {
+    const bm = character.blackMage || {};
+    const week = currentCrystalWeek();
+    const planned = bm.plannedWeek === week;
+    return {
+        difficulty: bm.difficulty || 'Hard',
+        planned,
+        done: bm.doneMonth === currentMonth(),
+        doneByRun: planned && bm.doneWeek === week,
+    };
+}
+
+function updateBlackMage(characterId, change) {
+    const character = characters.find(c => c.id === characterId);
+    if (!character) return;
+    character.blackMage = { ...(character.blackMage || {}), ...change };
+    saveToLocalStorage();
+    renderSellingStrategy();
+}
+
+function setBlackMagePlanned(characterId, on) {
+    const character = characters.find(c => c.id === characterId);
+    if (!character) return;
+    if (!on) {
+        // Taking the run back out of the week also undoes its finished tick.
+        const done = getCrystalsDone(character);
+        if (done.delete(BLACK_MAGE)) character.crystalsDone = { week: currentCrystalWeek(), bosses: Array.from(done) };
+        if (getBlackMage(character).doneByRun) character.blackMage = { ...character.blackMage, doneMonth: null, doneWeek: null };
+    }
+    updateBlackMage(characterId, { plannedWeek: on ? currentCrystalWeek() : null });
+}
+
+/** Done for the month by hand: run earlier this month, so not this week. */
+function setBlackMageDone(characterId, on) {
+    updateBlackMage(characterId, on
+        ? { doneMonth: currentMonth(), doneWeek: null, plannedWeek: null }
+        : { doneMonth: null, doneWeek: null });
+}
+
+function setBlackMageDifficulty(characterId, difficulty) {
+    updateBlackMage(characterId, { difficulty });
+}
+
+/**
+ * This week's crystals across the account, highest value first: the weekly
+ * picks without Black Mage, plus Black Mage for characters running it now.
+ */
+function weeklyCrystals() {
+    const all = getAllBossesWithValues().filter(b => b.baseName !== BLACK_MAGE);
+    characters.forEach(char => {
+        const bm = getBlackMage(char);
+        if (!bm.planned) return;
+        const partyCount = getBossPartyCount(char, BLACK_MAGE);
+        all.push({
+            characterId: char.id, characterName: char.name, baseName: BLACK_MAGE,
+            difficulty: bm.difficulty, partyCount,
+            adjustedValue: getBossValue(BLACK_MAGE, bm.difficulty) / partyCount,
+            monthly: true,
+        });
+    });
+    return all.sort((a, b) => b.adjustedValue - a.adjustedValue);
+}
+
 /** Each character's position in the roster, top first. */
 function rosterOrder() {
     return new Map(characters.map((c, i) => [c.id, i]));
 }
 
 function crystalSalePlan() {
-    const all = getAllBossesWithValues();   // sorted by adjusted value, highest first
+    const all = weeklyCrystals();           // sorted by adjusted value, highest first
     const perCharacter = new Map();
     const eligible = [];
     const overflow = [];
@@ -1219,7 +1299,14 @@ function getCrystalsDone(character) {
 }
 
 function setCrystalsDone(character, bosses) {
-    character.crystalsDone = { week: currentCrystalWeek(), bosses: Array.from(bosses) };
+    const week = currentCrystalWeek();
+    character.crystalsDone = { week, bosses: Array.from(bosses) };
+    const bm = getBlackMage(character);
+    if (bm.planned && character.crystalsDone.bosses.includes(BLACK_MAGE)) {
+        character.blackMage = { ...character.blackMage, doneMonth: currentMonth(), doneWeek: week };
+    } else if (bm.doneByRun) {
+        character.blackMage = { ...character.blackMage, doneMonth: null, doneWeek: null };
+    }
     saveToLocalStorage();
     renderSellingStrategy();
 }
@@ -1247,6 +1334,32 @@ function resetCrystalsDone(characterId) {
     setCrystalsDone(character, []);
 }
 
+/** A column's monthly Black Mage row: run this week, done this month, difficulty. */
+function renderBlackMageControls(char) {
+    const bm = getBlackMage(char);
+    const boss = bossData.find(b => b.baseName === BLACK_MAGE);
+    const difficulties = boss
+        ? Object.keys(boss.difficulties).sort((a, b) => boss.difficulties[a].value - boss.difficulties[b].value)
+        : ['Hard'];
+    // Done earlier this month: nothing to run. Done this week: the checklist tick owns it.
+    const runLocked = bm.done && !bm.doneByRun;
+    return `
+        <div class="sell-bm ${bm.planned ? 'sell-bm-on' : ''}">
+            ${renderBossIcon(BLACK_MAGE, bm.difficulty, 'boss-icon-sm')}
+            <label title="${runLocked ? 'Already done this month' : 'Run Black Mage this week: its crystal counts in place of the lowest one'}">
+                <input type="checkbox" ${bm.planned ? 'checked' : ''} ${runLocked ? 'disabled' : ''}
+                       onchange="setBlackMagePlanned(${char.id}, this.checked)"> This week
+            </label>
+            <label title="Done this month${bm.doneByRun ? ': finished in this week\'s checklist' : ': ran it earlier this month'}">
+                <input type="checkbox" ${bm.done ? 'checked' : ''} ${bm.doneByRun ? 'disabled' : ''}
+                       onchange="setBlackMageDone(${char.id}, this.checked)"> Done
+            </label>
+            <select onchange="setBlackMageDifficulty(${char.id}, this.value)" aria-label="Black Mage difficulty">
+                ${difficulties.map(d => `<option value="${d}" ${d === bm.difficulty ? 'selected' : ''}>${d}</option>`).join('')}
+            </select>
+        </div>`;
+}
+
 /**
  * Weekly checklist of the crystals that count, one column per character.
  * A character whose bosses are all finished collapses to its header.
@@ -1254,7 +1367,7 @@ function resetCrystalsDone(characterId) {
 function renderCrystalChecklist(counted) {
     const byCharacter = characters
         .map(char => ({ char, bosses: counted.filter(b => b.characterId === char.id) }))
-        .filter(c => c.bosses.length);
+        .filter(c => c.bosses.length || (c.char.selectedBosses && c.char.selectedBosses.size));
     if (!byCharacter.length) return '';
 
     let doneTotal = 0, earned = 0;
@@ -1265,7 +1378,7 @@ function renderCrystalChecklist(counted) {
         const finished = finishedBosses.length;
         doneTotal += finished;
         earned += finishedBosses.reduce((sum, b) => sum + b.adjustedValue, 0);
-        const complete = finished === bosses.length;
+        const complete = bosses.length > 0 && finished === bosses.length;
         const override = columnState.open[char.id];
         const open = typeof override === 'boolean' ? override : !complete;
         const rows = !open ? '' : bosses.map(b => {
@@ -1291,6 +1404,7 @@ function renderCrystalChecklist(counted) {
                            <button class="sell-link" onclick="resetCrystalsDone(${char.id})">Undo</button>`
                         : `<button class="sell-finish" onclick="finishAllCrystals(${char.id})">Finish all</button>`}
                 </div>
+                ${renderBlackMageControls(char)}
                 ${rows ? `<div class="sell-list">${rows}</div>` : ''}
             </div>`;
     }).join('');
