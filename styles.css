@@ -260,6 +260,17 @@ body {
     color: var(--cds-support-error);
 }
 
+/* Reorganise mode: tabs can be dragged into a new roster order. */
+.copy-character-btn.reorder-on { background: var(--cds-interactive); }
+.character-tabs.reordering .character-tab { cursor: grab; border-style: dashed; }
+.character-tabs.reordering .character-tab:active { cursor: grabbing; }
+.character-tabs.reordering .delete-character-btn { visibility: hidden; }
+.character-tab.dragging { opacity: 0.4; }
+.character-tab.drop-before { box-shadow: inset 4px 0 0 #f4f4f4; }
+.character-tab.drop-after { box-shadow: inset -4px 0 0 #f4f4f4; }
+.character-tab.drop-stacked.drop-before { box-shadow: inset 0 4px 0 #f4f4f4; }
+.character-tab.drop-stacked.drop-after { box-shadow: inset 0 -4px 0 #f4f4f4; }
+
 .character-tab.active .delete-character-btn {
     color: rgba(255, 255, 255, 0.6);
 }

@@ -52,7 +52,7 @@ The server needs only Node, with no dependencies. It serves the app, reads and w
 - IED lines are ignored in cube targets by default (stacked IED has sharply diminishing returns); hat cooldown can follow a class curve (Pathfinder built in)
 
 ### Multi-Character Management
-- Add, rename, copy, delete, and reorganize characters
+- Add, rename, copy and delete characters; press Reorganise to drag them into a new order (it also sets which characters drop surplus crystals first)
 - Active character highlighted with tab navigation
 - Per-character data across all tabs
 

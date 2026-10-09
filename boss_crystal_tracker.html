@@ -31,7 +31,7 @@
                     <div class="character-controls">
                         <button class="add-character-btn" onclick="addCharacter()">+ Add Character</button>
                         <button class="copy-character-btn" onclick="copyCurrentCharacter()">📋 Copy Character</button>
-                        <button class="copy-character-btn" onclick="reorganizeCharacters()">🔄 Reorganize</button>
+                        <button class="copy-character-btn" id="reorderBtn" onclick="toggleCharacterReorder()" aria-pressed="false">🔄 Reorganise</button>
                         <button class="save-btn" onclick="manualSave()">💾 Save</button>
                         <button class="export-btn" onclick="exportData()">📤 Export</button>
                         <button class="import-btn" onclick="document.getElementById('importFileInput').click()">📥 Import</button>

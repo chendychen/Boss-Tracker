@@ -597,22 +597,76 @@ function copyCurrentCharacter() {
     showSaveStatus();
 }
 
-function reorganizeCharacters() {
-    if (characters.length <= 1) {
-        alert('Need at least 2 characters to reorganize!');
-        return;
+// The roster order is set by dragging character tabs, which is locked until
+// Reorganise is pressed so a stray drag never reshuffles it.
+let reorderingCharacters = false;
+let draggedCharacterId = null;
+
+function toggleCharacterReorder() {
+    reorderingCharacters = !reorderingCharacters;
+    const btn = document.getElementById('reorderBtn');
+    if (btn) {
+        btn.textContent = reorderingCharacters ? '✓ Done' : '🔄 Reorganise';
+        btn.setAttribute('aria-pressed', String(reorderingCharacters));
+        btn.classList.toggle('reorder-on', reorderingCharacters);
     }
+    renderCharacterTabs();
+}
 
-    // Sort characters by total earnings (highest to lowest)
-    characters.sort((a, b) => {
-        const totalA = calculateTotal(a);
-        const totalB = calculateTotal(b);
-        return totalB - totalA;
-    });
+/**
+ * Whether a drop lands after the tab under the pointer: its right half when
+ * the tab shares a row with a neighbour, its lower half when the tabs have
+ * wrapped one per line (a narrow window).
+ */
+function dropPosition(event, tab) {
+    const box = tab.getBoundingClientRect();
+    const inRow = [tab.previousElementSibling, tab.nextElementSibling]
+        .some(t => t && Math.abs(t.getBoundingClientRect().top - box.top) < box.height / 2);
+    return inRow
+        ? { after: event.clientX > box.left + box.width / 2, stacked: false }
+        : { after: event.clientY > box.top + box.height / 2, stacked: true };
+}
 
+function onCharacterDragStart(event, id) {
+    draggedCharacterId = id;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(id));
+    event.currentTarget.classList.add('dragging');
+}
+
+function onCharacterDragOver(event, id) {
+    if (draggedCharacterId === null) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    const tab = event.currentTarget;
+    const { after, stacked } = dropPosition(event, tab);
+    const over = id !== draggedCharacterId;
+    tab.classList.toggle('drop-before', over && !after);
+    tab.classList.toggle('drop-after', over && after);
+    tab.classList.toggle('drop-stacked', stacked);
+}
+
+function onCharacterDragLeave(event) {
+    event.currentTarget.classList.remove('drop-before', 'drop-after');
+}
+
+function onCharacterDrop(event, id) {
+    event.preventDefault();
+    const { after } = dropPosition(event, event.currentTarget);
+    const from = characters.findIndex(c => c.id === draggedCharacterId);
+    draggedCharacterId = null;
+    if (from < 0 || characters[from].id === id) { renderCharacterTabs(); return; }
+    const [moved] = characters.splice(from, 1);
+    const target = characters.findIndex(c => c.id === id);
+    characters.splice(after ? target + 1 : target, 0, moved);
     saveToLocalStorage();
     renderAll();
-    showSaveStatus();
+}
+
+function onCharacterDragEnd() {
+    draggedCharacterId = null;
+    document.querySelectorAll('.character-tab.dragging, .character-tab.drop-before, .character-tab.drop-after')
+        .forEach(t => t.classList.remove('dragging', 'drop-before', 'drop-after'));
 }
 
 function updateBossPartyCount(bossBaseName, count) {
@@ -723,11 +777,16 @@ function updateCharacterName(name) {
 
 function renderCharacterTabs() {
     const container = document.getElementById('characterTabs');
+    container.classList.toggle('reordering', reorderingCharacters);
     container.innerHTML = characters.map(char => {
         const total = calculateTotal(char);
         const sanitizedName = sanitizeInput(char.name);
+        const drag = reorderingCharacters ? `draggable="true"
+                 ondragstart="onCharacterDragStart(event, ${char.id})" ondragover="onCharacterDragOver(event, ${char.id})"
+                 ondragleave="onCharacterDragLeave(event)" ondrop="onCharacterDrop(event, ${char.id})"
+                 ondragend="onCharacterDragEnd()"` : '';
         return `
-            <div class="character-tab ${char.id === activeCharacterId ? 'active' : ''}"
+            <div class="character-tab ${char.id === activeCharacterId ? 'active' : ''}" ${drag}
                  onclick="switchCharacter(${char.id})">
                 <div>
                     <div class="character-tab-name">${sanitizedName}</div>
