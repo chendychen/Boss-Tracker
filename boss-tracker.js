@@ -1135,14 +1135,6 @@ function renderAll() {
 const CRYSTALS_PER_CHARACTER = 14;
 const CRYSTALS_PER_ACCOUNT = 180;
 
-/**
- * Which crystals count this week. Each character sells at most its 14 most
- * valuable, and the account at most 180, taken from those per-character
- * picks by value. Everything else is overflow to drop. Where the 180 cut
- * falls among crystals of equal value, the characters highest in the roster
- * drop theirs: 13 Gloom over the limit are dropped by the top 13.
- * @returns {{counted: object[], overflow: object[], accountLimitHit: boolean}}
- */
 // Black Mage is a monthly boss, so its crystal only counts in the week a
 // character runs it, set per character in the Selling Strategy checklist
 // rather than from the weekly boss picks.
@@ -1226,12 +1218,28 @@ function rosterOrder() {
     return new Map(characters.map((c, i) => [c.id, i]));
 }
 
+/**
+ * Which crystals count this week. Each character sells at most its 14 most
+ * valuable, and the account at most 180, taken from those per-character
+ * picks by value. Everything else is overflow to drop. Crystals already sold
+ * this week (finished in the checklist) always keep their place, so a new
+ * pick such as Black Mage pushes out an unsold crystal instead. Where the 180
+ * cut falls among unsold crystals of equal value, the characters highest in
+ * the roster drop theirs: 13 Gloom over the limit are dropped by the top 13.
+ * @returns {{counted: object[], overflow: object[], accountLimitHit: boolean}}
+ */
 function crystalSalePlan() {
-    const all = weeklyCrystals();           // sorted by adjusted value, highest first
+    const doneByCharacter = new Map(characters.map(c => [c.id, getCrystalsDone(c)]));
+    const sold = b => doneByCharacter.get(b.characterId).has(b.baseName);
+    const rosterIndex = rosterOrder();
+    // Sold first, then by value; equal values drop from the top of the roster.
+    const keepOrder = (a, b) => sold(b) - sold(a) || b.adjustedValue - a.adjustedValue
+        || rosterIndex.get(b.characterId) - rosterIndex.get(a.characterId);
+
     const perCharacter = new Map();
     const eligible = [];
     const overflow = [];
-    all.forEach(b => {
+    weeklyCrystals().sort(keepOrder).forEach(b => {
         const n = perCharacter.get(b.characterId) || 0;
         if (n < CRYSTALS_PER_CHARACTER) {
             perCharacter.set(b.characterId, n + 1);
@@ -1240,12 +1248,12 @@ function crystalSalePlan() {
             overflow.push({ ...b, reason: 'character' });
         }
     });
-    const rosterIndex = rosterOrder();
-    eligible.sort((a, b) => b.adjustedValue - a.adjustedValue
-        || rosterIndex.get(b.characterId) - rosterIndex.get(a.characterId));
+    eligible.sort(keepOrder);
     eligible.slice(CRYSTALS_PER_ACCOUNT).forEach(b => overflow.push({ ...b, reason: 'account' }));
+    // Highest value first for display, whatever was sold.
+    const counted = eligible.slice(0, CRYSTALS_PER_ACCOUNT).sort((a, b) => b.adjustedValue - a.adjustedValue);
     return {
-        counted: eligible.slice(0, CRYSTALS_PER_ACCOUNT),
+        counted,
         overflow,
         accountLimitHit: eligible.length > CRYSTALS_PER_ACCOUNT,
     };
