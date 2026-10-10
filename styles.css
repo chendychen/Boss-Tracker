@@ -1034,13 +1034,13 @@ tr.upg-editor-row > td { background: var(--cds-layer-02); padding: var(--spacing
 .sell-bm label { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; white-space: nowrap; }
 .sell-bm input:disabled + * , .sell-bm label:has(input:disabled) { cursor: default; opacity: 0.7; }
 .sell-bm select {
-    margin-left: auto;
     background: #262626;
     color: #c6c6c6;
     border: 1px solid #525252;
     padding: 1px 0;
     font-size: 1em;
 }
+.sell-bm select:first-of-type { margin-left: auto; }
 .sell-earned { color: #42be65; font-weight: 700; font-size: 1.1em; font-variant-numeric: tabular-nums; }
 .sell-of { color: #8d8d8d; font-weight: 400; font-size: 0.85em; }
 

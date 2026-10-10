@@ -138,3 +138,50 @@ Additional Status D... 20 Summon Duration 12
         assert.equal(b.stats.model, 'hp');
     });
 });
+
+describe('MapleScouter results page', () => {
+    // What Tesseract read off a results page's left column.
+    const RESULTS = `Combat Power
+ITEMSTAT 827572161
+HEXA
+STAT Ee
+Dojo 663,782,515
+Boss 300 Boss 380
+Normal 108,137 Normal 108,598
+HEXA 108137 HEXA 108,598
+Scouter Graph
+Stat Efficiency
+ATT/MATT per 40% BD | | ATT/MATT per 45% BD
+(85) w— (08) wm
+`;
+
+    test('is told apart from the Enter Directly page', () => {
+        assert.ok(S.isResultsPage(RESULTS));
+        assert.ok(!S.isResultsPage('Base Value % Value % Value Not Applied\nDEX 7054 525 31410'));
+    });
+
+    test('hexa converted is the HEXA figure under Boss 380', () => {
+        assert.equal(S.parseResultsText(RESULTS).hexaConverted, 108598);
+        assert.equal(S.parseResultsText('HEXA 73,418').hexaConverted, 73418);
+    });
+
+    test('a bubble read without its decimal point gets it back', () => {
+        assert.equal(S.bubbleValue('85'), 8.5);
+        assert.equal(S.bubbleValue('4.6'), 4.6);
+        assert.equal(S.bubbleValue('103'), 10.3);
+        assert.equal(S.bubbleValue(''), null);
+    });
+
+    test('the bubble is looked for under its own card, even when OCR misspells the label', () => {
+        const words = [
+            { t: 'ATT/MATT', x0: 33, x1: 84, y0: 769, y1: 778 }, { t: 'per', x0: 88, x1: 102, y0: 769, y1: 778 },
+            { t: '40%', x0: 105, x1: 127, y0: 769, y1: 777 }, { t: 'ADD', x0: 131, x1: 152, y0: 769, y1: 777 },
+            { t: 'ATTMAT', x0: 180, x1: 231, y0: 769, y1: 778 }, { t: 'per', x0: 234, x1: 249, y0: 769, y1: 778 },
+            { t: '40%', x0: 252, x1: 274, y0: 769, y1: 777 }, { t: 'EQP', x0: 278, x1: 298, y0: 769, y1: 778 },
+            { t: 'ID', x0: 234, x1: 243, y0: 787, y1: 795 },
+        ];
+        const r = S.bubbleRegion(words, /^EQP$/);
+        assert.ok(r.x > 160 && r.x < 180, `left edge ${r.x}`);
+        assert.ok(r.y > 795, `below the ID line, got ${r.y}`);
+    });
+});

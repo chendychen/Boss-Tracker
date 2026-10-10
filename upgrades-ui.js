@@ -540,7 +540,11 @@ function activeScouterShot(character) {
     return scouterShot && character && scouterShot.characterId === character.id ? scouterShot : null;
 }
 
-/** Reads a MapleScouter "Enter Directly" screenshot into a review form. */
+/**
+ * Reads a MapleScouter screenshot into a review form: the Enter Directly
+ * page gives the stat sheet, the results page hexa converted and the Stat
+ * Efficiency numbers that calibrate skill IED.
+ */
 async function readScouterShot(file) {
     const character = getActiveCharacter();
     if (!character || !file) return;
@@ -549,7 +553,7 @@ async function readScouterShot(file) {
     scouterShot = { characterId: id, status: 'reading', progress: 'Starting' };
     renderUpgradesContent();
     try {
-        const { text, parsed } = await ScouterScreenshot.readScouterScreenshot(file, progress => {
+        const { kind, text, parsed } = await ScouterScreenshot.readScouterScreenshot(file, progress => {
             const shot = scouterShot && scouterShot.characterId === id && scouterShot.status === 'reading' ? scouterShot : null;
             if (!shot) return;
             shot.progress = progress;
@@ -557,8 +561,12 @@ async function readScouterShot(file) {
             if (el) el.textContent = progress;
         });
         if (!scouterShot || scouterShot.characterId !== id) return;      // cancelled meanwhile
-        const read = ScouterScreenshot.statsFromScouter(parsed, getCharClass(character));
-        scouterShot = { characterId: id, status: 'review', text, parsed, ...read };
+        if (kind === 'results') {
+            scouterShot = { characterId: id, status: 'results', text, parsed };
+        } else {
+            const read = ScouterScreenshot.statsFromScouter(parsed, getCharClass(character));
+            scouterShot = { characterId: id, status: 'review', text, parsed, ...read };
+        }
     } catch (e) {
         if (!scouterShot || scouterShot.characterId !== id) return;
         scouterShot = { characterId: id, status: 'error', error: e.message || String(e) };
@@ -594,6 +602,35 @@ function applyScouterShot() {
     renderUpgradesContent();
 }
 
+/** Skill IED that makes the stat sheet value BD and EQP IED as MapleScouter does; null without a sheet. */
+function fitSkillIed(character, bd, ied) {
+    const build = character && character.upgradeBuild;
+    if (!build || !(bd > 0) || !(ied > 0)) return null;
+    const stats = UpgradeEngine.analysisStats(build, { ...characterUpgradeSettings(character), skillIed: 0 });
+    if (!UpgradeEngine.damageIndex(stats)) return null;
+    return UpgradeEngine.solveSkillIed(stats, bd, ied, upgradeSettings.pdr);
+}
+
+/** Puts a reviewed results page into Progression's hexa converted and the skill IED calibration. */
+function applyScouterResults() {
+    const character = getActiveCharacter();
+    const shot = activeScouterShot(character);
+    if (!shot || shot.status !== 'results') return;
+    const value = id => parseFloat((document.getElementById(id) || {}).value);
+    const hexa = value('scouterRes_hexa');
+    const bd = value('scouterRes_bd');
+    const ied = value('scouterRes_ied');
+    if (hexa > 0) character.hexaConverted = Math.round(hexa);
+    const fit = fitSkillIed(character, bd, ied);
+    if (fit) {
+        character.skillIed = fit.skillIed || null;
+        character.skillIedSource = { bd, ied, at: new Date().toISOString().slice(0, 10) };
+    }
+    scouterShot = null;
+    saveToLocalStorage();
+    renderUpgradesContent();
+}
+
 // Pasting an image anywhere on the Upgrades tab reads it.
 document.addEventListener('paste', event => {
     if (typeof activeMainTab === 'undefined' || activeMainTab !== 'upgrades') return;
@@ -610,8 +647,9 @@ function renderScouterShot(character, build) {
         <div class="upg-shot-pick">
             <button class="save-btn" onclick="document.getElementById('scouterShotInput').click()"
                     ${shot && shot.status === 'reading' ? 'disabled' : ''}>Read a MapleScouter screenshot</button>
-            <span class="upg-hint">or paste one (Ctrl+V) on this tab. Use the Enter Directly page; the image is read
-                in your browser and never uploaded.${from ? ` Last filled from a ${sanitizeInput(from.source)} on ${from.at}.` : ''}</span>
+            <span class="upg-hint">or paste one (Ctrl+V) on this tab: the Enter Directly page fills the stat sheet,
+                the results page hexa converted and skill IED. The image is read in your browser and never
+                uploaded.${from ? ` Stats last filled from a ${sanitizeInput(from.source)} on ${from.at}.` : ''}</span>
             <input type="file" id="scouterShotInput" accept="image/*" hidden
                    onchange="readScouterShot(this.files[0]); this.value = ''">
         </div>`;
@@ -623,6 +661,7 @@ function renderScouterShot(character, build) {
         return picker + `<p class="upg-note upg-shot-error">${sanitizeInput(shot.error)}
             <button class="sell-link" onclick="cancelScouterShot()">Dismiss</button></p>`;
     }
+    if (shot.status === 'results') return picker + renderScouterResults(character, shot);
 
     const cls = getCharClass(character);
     const p = shot.parsed;
@@ -662,6 +701,53 @@ function renderScouterShot(character, build) {
             </div>
             <details class="upg-shot-text"><summary>Recognised text</summary><pre>${sanitizeInput(shot.text)}</pre></details>
         </div>`;
+}
+
+/** Review form for a results page screenshot. */
+function renderScouterResults(character, shot) {
+    const p = shot.parsed;
+    const fit = fitSkillIed(character, p.bd40, p.ied40);
+    const nowSkill = getCharSkillIed(character);
+    const input = (id, v, step) => `<input type="number" step="${step}" id="${id}" value="${v === null || v === undefined ? '' : v}"
+        placeholder="not read" oninput="updateScouterResultsPreview()">`;
+    const row = (label, id, v, step, now) => `
+        <tr class="${v === null || v === undefined ? 'upg-shot-missing' : ''}">
+            <td>${label}</td><td>${input(id, v, step)}</td><td class="upg-sub">${now}</td>
+        </tr>`;
+    return `
+        <div class="upg-shot-review">
+            <p class="upg-note">A MapleScouter results page. Check these against the screenshot, fix anything
+                misread, then apply.</p>
+            <table class="upg-shot-table">
+                <thead><tr><th>Field</th><th>Read</th><th>Now</th></tr></thead>
+                <tbody>
+                    ${row('Hexa converted (Boss 380)', 'scouterRes_hexa', p.hexaConverted, 1,
+                        character.hexaConverted ? Number(character.hexaConverted).toLocaleString() : '—')}
+                    ${row('ATT per 40% BD', 'scouterRes_bd', p.bd40, 0.1, character.skillIedSource ? character.skillIedSource.bd : '—')}
+                    ${row('ATT per 40% EQP ID', 'scouterRes_ied', p.ied40, 0.1, character.skillIedSource ? character.skillIedSource.ied : '—')}
+                </tbody>
+            </table>
+            <p class="upg-hint" id="scouterResPreview">${scouterResultsPreview(fit, nowSkill)}</p>
+            <div class="upg-line">
+                <button class="save-btn" onclick="applyScouterResults()">Apply</button>
+                <button class="sell-link" onclick="cancelScouterShot()">Cancel</button>
+            </div>
+            <details class="upg-shot-text"><summary>Recognised text</summary><pre>${sanitizeInput(shot.text)}</pre></details>
+        </div>`;
+}
+
+function scouterResultsPreview(fit, nowSkill) {
+    return fit
+        ? `Skill IED from these: ${fit.skillIed}% (now ${nowSkill}%). Hexa converted goes to Progression.`
+        : 'Skill IED needs both Stat Efficiency numbers and a filled stat sheet; hexa converted still goes to Progression.';
+}
+
+function updateScouterResultsPreview() {
+    const character = getActiveCharacter();
+    const el = document.getElementById('scouterResPreview');
+    if (!character || !el) return;
+    const v = id => parseFloat((document.getElementById(id) || {}).value);
+    el.textContent = scouterResultsPreview(fitSkillIed(character, v('scouterRes_bd'), v('scouterRes_ied')), getCharSkillIed(character));
 }
 
 function renderUpgradeStats(character, build) {
@@ -783,8 +869,7 @@ function calibrateSkillIed() {
     if (!build) return;
     const bd = parseFloat(document.getElementById('scouterBd40').value);
     const ied = parseFloat(document.getElementById('scouterIed40').value);
-    const stats = UpgradeEngine.analysisStats(build, { ...characterUpgradeSettings(character), skillIed: 0 });
-    const fit = UpgradeEngine.solveSkillIed(stats, bd, ied, upgradeSettings.pdr);
+    const fit = fitSkillIed(character, bd, ied);
     if (!fit) { alert('Enter both numbers from MapleScouter\'s Stat Efficiency panel.'); return; }
     character.skillIed = fit.skillIed || null;
     character.skillIedSource = { bd, ied, at: new Date().toISOString().slice(0, 10) };

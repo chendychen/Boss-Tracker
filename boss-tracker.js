@@ -164,6 +164,11 @@ const bossData = Object.values(bossGroups).map(group => {
     };
 }).sort((a, b) => b.value - a.value); // Sort by highest value
 
+// Black Mage is a monthly boss, so it is not one of the weekly picks on the
+// Boss Crystals tab: its crystal counts only in the week a character runs it,
+// set per character in the Selling Strategy checklist.
+const BLACK_MAGE = 'Black Mage';
+
 let characters = [];
 let activeCharacterId = null;
 let nextCharacterId = 1;
@@ -265,7 +270,8 @@ function deserializeCharacter(char) {
     return {
         id: char.id,
         name: char.name,
-        selectedBosses: new Set(char.selectedBosses || []),
+        // Black Mage left the weekly picks for Selling Strategy's monthly row.
+        selectedBosses: new Set((char.selectedBosses || []).filter(b => b !== BLACK_MAGE)),
         bossPartyCount: char.bossPartyCount || {},
         bossDifficulty: char.bossDifficulty || {},
         pitchedGear: new Set(char.pitchedGear || []),
@@ -805,6 +811,7 @@ function renderBosses(filter = '') {
     // bossData is already ordered by each boss's highest-difficulty price, descending.
     // The list stays in that fixed order — picking a difficulty or party size never reorders it.
     const filteredBosses = bossData
+        .filter(boss => boss.baseName !== BLACK_MAGE)
         .filter(boss => boss.baseName.toLowerCase().includes(filter.toLowerCase()));
 
     return filteredBosses.map(boss => {
@@ -1194,10 +1201,6 @@ function renderAll() {
 const CRYSTALS_PER_CHARACTER = 14;
 const CRYSTALS_PER_ACCOUNT = 180;
 
-// Black Mage is a monthly boss, so its crystal only counts in the week a
-// character runs it, set per character in the Selling Strategy checklist
-// rather than from the weekly boss picks.
-const BLACK_MAGE = 'Black Mage';
 
 /** The current month for monthly bosses, which reset on the 1st at 00:00 UTC. */
 function currentMonth(now = new Date()) {
@@ -1250,6 +1253,15 @@ function setBlackMageDone(characterId, on) {
 
 function setBlackMageDifficulty(characterId, difficulty) {
     updateBlackMage(characterId, { difficulty });
+}
+
+/** Black Mage's party size, kept with the other bosses' party sizes. */
+function setBlackMageParty(characterId, count) {
+    const character = characters.find(c => c.id === characterId);
+    if (!character) return;
+    character.bossPartyCount[BLACK_MAGE] = Math.max(1, Math.min(6, parseInt(count, 10) || 1));
+    saveToLocalStorage();
+    renderSellingStrategy();
 }
 
 /**
@@ -1401,7 +1413,7 @@ function resetCrystalsDone(characterId) {
     setCrystalsDone(character, []);
 }
 
-/** A column's monthly Black Mage row: run this week, done this month, difficulty. */
+/** A column's monthly Black Mage row: run this week, done this month, difficulty, party size. */
 function renderBlackMageControls(char) {
     const bm = getBlackMage(char);
     const boss = bossData.find(b => b.baseName === BLACK_MAGE);
@@ -1410,12 +1422,13 @@ function renderBlackMageControls(char) {
         : ['Hard'];
     // Done earlier this month: nothing to run. Done this week: the checklist tick owns it.
     const runLocked = bm.done && !bm.doneByRun;
+    const party = getBossPartyCount(char, BLACK_MAGE);
     return `
         <div class="sell-bm ${bm.planned ? 'sell-bm-on' : ''}">
             ${renderBossIcon(BLACK_MAGE, bm.difficulty, 'boss-icon-sm')}
             <label title="${runLocked ? 'Already done this month' : 'Run Black Mage this week: its crystal counts in place of the lowest one'}">
                 <input type="checkbox" ${bm.planned ? 'checked' : ''} ${runLocked ? 'disabled' : ''}
-                       onchange="setBlackMagePlanned(${char.id}, this.checked)"> This week
+                       onchange="setBlackMagePlanned(${char.id}, this.checked)"> Run
             </label>
             <label title="Done this month${bm.doneByRun ? ': finished in this week\'s checklist' : ': ran it earlier this month'}">
                 <input type="checkbox" ${bm.done ? 'checked' : ''} ${bm.doneByRun ? 'disabled' : ''}
@@ -1423,6 +1436,10 @@ function renderBlackMageControls(char) {
             </label>
             <select onchange="setBlackMageDifficulty(${char.id}, this.value)" aria-label="Black Mage difficulty">
                 ${difficulties.map(d => `<option value="${d}" ${d === bm.difficulty ? 'selected' : ''}>${d}</option>`).join('')}
+            </select>
+            <select class="sell-bm-party" onchange="setBlackMageParty(${char.id}, this.value)" aria-label="Black Mage party size"
+                    title="Party size: the crystal's value is split between the party">
+                ${[1, 2, 3, 4, 5, 6].map(n => `<option value="${n}" ${n === party ? 'selected' : ''}>×${n}</option>`).join('')}
             </select>
         </div>`;
 }

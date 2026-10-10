@@ -1,7 +1,9 @@
 /**
- * Reads the stat sheet off a MapleScouter "Enter Directly" screenshot for the
- * Upgrades tab. Text recognition runs in the browser with Tesseract.js,
- * loaded from jsdelivr on first use; the image itself is never uploaded.
+ * Reads MapleScouter screenshots: the "Enter Directly" page gives the
+ * Upgrades tab's stat sheet, the results page gives hexa converted (for
+ * Progression) and the Stat Efficiency panel (for skill IED). Text
+ * recognition runs in the browser with Tesseract.js, loaded from jsdelivr on
+ * first use; the image itself is never uploaded.
  *
  * Exposes window.ScouterScreenshot. The parsing half is plain functions so
  * tests can run it against recognised text in Node.
@@ -123,6 +125,39 @@
         return { stats, missing: fields.filter(k => !(k in stats)) };
     }
 
+    // ── Results page ────────────────────────────────────────────────────────
+
+    /** Whether recognised text is MapleScouter's results page rather than Enter Directly. */
+    function isResultsPage(text) {
+        return /Stat\s+Efficiency|Boss\s+380|Scouter\s+Graph/i.test(text) && !/Base\s+Value/i.test(text);
+    }
+
+    /**
+     * Hexa converted: the HEXA figure under Boss 380. The HEXA row reads
+     * "HEXA 108,137 HEXA 108,598", Boss 300 first, so the last one is taken.
+     */
+    function parseResultsText(text) {
+        let hexa = null;
+        for (const line of String(text || '').split('\n')) {
+            if (!/^\s*HEXA\b/i.test(line)) continue;
+            const nums = [...line.matchAll(/HEXA\s+(\d[\d,]{3,})/gi)].map(m => num(m[1]));
+            if (nums.length) hexa = nums[nums.length - 1];
+        }
+        return { hexaConverted: hexa };
+    }
+
+    /**
+     * A Stat Efficiency value as read off its slider bubble. The decimal point
+     * is a dot or two pixels and often drops out; these values carry one
+     * decimal place, so a bare "85" is 8.5.
+     */
+    function bubbleValue(raw) {
+        const s = String(raw || '').replace(/[^\d.]/g, '').replace(/^\.+|\.+$/g, '');
+        if (!s) return null;
+        if (s.includes('.')) return num(s);
+        return s.length >= 2 ? num(`${s.slice(0, -1)}.${s.slice(-1)}`) : num(s);
+    }
+
     // ── Browser: load Tesseract, find the stats panel, recognise ─────────────
 
     let tesseractLoading = null;
@@ -173,13 +208,18 @@
         });
     }
 
-    /** The stats panel enlarged and inverted to dark text on light, as Tesseract prefers. */
+    /**
+     * The stats panel enlarged and inverted to dark text on light, as
+     * Tesseract prefers. Also returns the original pixels and the scale, so
+     * results can be mapped back onto the screenshot.
+     */
     function prepare(img) {
         const probe = document.createElement('canvas');
         probe.width = img.width; probe.height = img.height;
         const pg = probe.getContext('2d');
         pg.drawImage(img, 0, 0);
-        const divider = findDivider(pg.getImageData(0, 0, img.width, img.height).data, img.width, img.height);
+        const pixels = pg.getImageData(0, 0, img.width, img.height).data;
+        const divider = findDivider(pixels, img.width, img.height);
         const w = divider ? divider - 2 : img.width;
         const scale = Math.min(OCR_SCALE, Math.max(1, Math.floor(4000 / Math.max(w, img.height))));
         const c = document.createElement('canvas');
@@ -192,24 +232,141 @@
             d.data[i] = d.data[i + 1] = d.data[i + 2] = v;
         }
         g.putImageData(d, 0, 0);
+        return { canvas: c, scale, pixels };
+    }
+
+    /** Words with boxes in screenshot pixels, from a recognition run with blocks. */
+    function wordsOf(data, scale) {
+        return (data.blocks || []).flatMap(b => b.paragraphs.flatMap(p => p.lines.flatMap(l => l.words)))
+            .map(w => ({ t: w.text, x0: w.bbox.x0 / scale, x1: w.bbox.x1 / scale, y0: w.bbox.y0 / scale, y1: w.bbox.y1 / scale }));
+    }
+
+    /**
+     * Where a Stat Efficiency card's bubble sits, from its label: the card's
+     * label reads "ATT/MATT per 40% <tail>", and the bubble rides a slider
+     * just below it (below the "ID" that wraps onto a second line for EQP ID).
+     * Returns a search box in screenshot pixels, or null.
+     */
+    function bubbleRegion(words, tail) {
+        const sameLine = (a, b) => Math.abs((a.y0 + a.y1) / 2 - (b.y0 + b.y1) / 2) < Math.max(a.y1 - a.y0, 6);
+        for (const end of words.filter(w => tail.test(w.t))) {
+            const pct = words.find(w => /^40%$/.test(w.t) && sameLine(w, end) && w.x1 <= end.x0 + 2 && end.x0 - w.x1 < 25);
+            if (!pct) continue;
+            // The label's first word, "ATT/MATT", is the word before "per";
+            // found by position because OCR does not always spell it exactly.
+            const before = words.filter(w => sameLine(w, end) && w.x0 < pct.x0).sort((a, b) => b.x0 - a.x0);
+            const att = /^p\S{1,3}$/i.test((before[0] || {}).t) ? before[1] : before[0];
+            if (!att) continue;
+            const lh = Math.max(att.y1 - att.y0, 6);
+            const left = att.x0 - 0.8 * lh, right = end.x1 + 0.8 * lh;
+            const id = words.find(w => /^ID$/i.test(w.t) && w.y0 > end.y1 && w.y0 - end.y1 < 2 * lh
+                && w.x0 >= left && w.x1 <= right);
+            const top = (id || end).y1;
+            return { x: Math.round(left), y: Math.round(top + 0.8 * lh), w: Math.round(right - left), h: Math.round(1.9 * lh) };
+        }
+        return null;
+    }
+
+    /**
+     * The bright digits inside a region: the bubble's number is the only
+     * near-white there apart from the card's border, a vertical line that is
+     * bright down most of the region and is skipped for that.
+     */
+    function brightBox(pixels, width, region) {
+        const bright = (x, y) => {
+            const i = (y * width + x) * 4;
+            return 0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2] > 170;
+        };
+        let x0 = Infinity, x1 = -1, y0 = Infinity, y1 = -1;
+        for (let x = region.x; x < region.x + region.w; x++) {
+            const rows = [];
+            for (let y = region.y; y < region.y + region.h; y++) if (bright(x, y)) rows.push(y);
+            if (!rows.length || rows.length > 0.7 * region.h) continue;
+            x0 = Math.min(x0, x); x1 = Math.max(x1, x);
+            y0 = Math.min(y0, rows[0]); y1 = Math.max(y1, rows[rows.length - 1]);
+        }
+        return x1 < 0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+    }
+
+    /** A small box enlarged and thresholded to black digits on white. */
+    function digitsCanvas(img, box, scale) {
+        const pad = 4;
+        const c = document.createElement('canvas');
+        c.width = (box.w + 2 * pad) * scale; c.height = (box.h + 2 * pad) * scale;
+        const g = c.getContext('2d');
+        g.imageSmoothingQuality = 'high';
+        g.drawImage(img, box.x - pad, box.y - pad, box.w + 2 * pad, box.h + 2 * pad, 0, 0, c.width, c.height);
+        const d = g.getImageData(0, 0, c.width, c.height);
+        for (let i = 0; i < d.data.length; i += 4) {
+            const v = 0.299 * d.data[i] + 0.587 * d.data[i + 1] + 0.114 * d.data[i + 2] > 130 ? 0 : 255;
+            d.data[i] = d.data[i + 1] = d.data[i + 2] = v;
+        }
+        g.putImageData(d, 0, 0);
         return c;
     }
 
-    /** Recognises a screenshot; resolves to { text, parsed }. */
+    /**
+     * Reads one Stat Efficiency bubble; tries two enlargements and prefers
+     * one with its decimal point. Returns { value, reads, box }.
+     */
+    async function readBubble(worker, img, pixels, words, tail) {
+        const region = bubbleRegion(words, tail);
+        const box = region && brightBox(pixels, img.width, region);
+        if (!box) return { value: null, reads: [], box: null, region };
+        const reads = [];
+        for (const scale of [6, 8]) {
+            const { data } = await worker.recognize(digitsCanvas(img, box, scale));
+            const t = data.text.trim();
+            if (t) reads.push(t);
+        }
+        return { value: bubbleValue(reads.find(t => t.includes('.')) || reads[0]), reads, box, region };
+    }
+
+    /**
+     * Recognises a screenshot. Resolves to { kind: 'enter', text, parsed } for
+     * the Enter Directly page, or { kind: 'results', text, parsed } with
+     * parsed = { hexaConverted, bd40, ied40 } for the results page.
+     */
     async function readScouterScreenshot(blob, onProgress = () => {}) {
         onProgress('Loading the text reader');
         const Tesseract = await loadTesseract();
-        const canvas = prepare(await loadImage(blob));
+        const img = await loadImage(blob);
+        const { canvas, scale, pixels } = prepare(img);
         const worker = await Tesseract.createWorker('eng', 1, {
             logger: m => { if (m.status === 'recognizing text') onProgress(`Reading ${Math.round(m.progress * 100)}%`); },
         });
+        let data;
         try {
-            const { data } = await worker.recognize(canvas);
-            return { text: data.text, parsed: parseScouterText(data.text) };
+            ({ data } = await worker.recognize(canvas, {}, { blocks: true }));
         } finally {
             await worker.terminate();
         }
+        if (!isResultsPage(data.text)) return { kind: 'enter', text: data.text, parsed: parseScouterText(data.text) };
+
+        // A fresh reader for the bubbles: one that has just read the whole
+        // page adapts to its fonts and misreads the tiny digits.
+        onProgress('Reading Stat Efficiency');
+        const words = wordsOf(data, scale);
+        const digits = await Tesseract.createWorker('eng');
+        try {
+            await digits.setParameters({ tessedit_char_whitelist: '0123456789.', tessedit_pageseg_mode: '7' });
+            const bd = await readBubble(digits, img, pixels, words, /^BD$/i);
+            const ied = await readBubble(digits, img, pixels, words, /^EQP$/i);
+            const bubbleNote = (label, b) => `${label}: ${b.reads.length ? b.reads.join(' / ') : 'not found'}`;
+            return {
+                kind: 'results',
+                text: `${data.text}
+${bubbleNote('ATT per 40% BD bubble', bd)}
+${bubbleNote('ATT per 40% EQP ID bubble', ied)}`,
+                parsed: { ...parseResultsText(data.text), bd40: bd.value, ied40: ied.value, bubbles: { bd, ied } },
+            };
+        } finally {
+            await digits.terminate();
+        }
     }
 
-    root.ScouterScreenshot = { parseScouterText, statsFromScouter, matchClass, findDivider, readScouterScreenshot };
+    root.ScouterScreenshot = {
+        parseScouterText, statsFromScouter, matchClass, findDivider, readScouterScreenshot,
+        isResultsPage, parseResultsText, bubbleValue, bubbleRegion,
+    };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
