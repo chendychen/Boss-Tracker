@@ -104,7 +104,7 @@ describe('importing builds', () => {
             characterStats: { primaryStat: 7000, totalPercentStat: 500, additionalPrimaryStat: 30000,
                 secondaryStat: 4000, totalPercentSecondaryStat: 200, additionalSecondaryStat: 500,
                 totalATT: 3800, totalPercentATT: 110, damagePercent: 60, bossDamagePercent: 600,
-                ied: 0.972, critDamagePercent: 140 },
+                ied: 0.972, critDamagePercent: 140, abnormalStatusDamage: 22 },
             gear: {
                 weapon: { name: 'Genesis Bow', itemLevel: 200, currentStars: 22, starforceCap: 22,
                     isWSE: true, category: 'weapon', potentialTier: 'legendary',
@@ -118,6 +118,8 @@ describe('importing builds', () => {
         assert.equal(got.className, 'Bowmaster');
         near(got.stats.ied, 97.2);
         assert.equal(got.stats.mainFlat, 30000);
+        assert.equal(got.stats.dmg, 60);
+        assert.equal(got.stats.statusDmg, 22);
         assert.deepEqual(Object.keys(got.items), ['weapon']);
         assert.equal(got.items.weapon.stars, 22);
         assert.equal(got.items.weapon.potLines.length, 3);
@@ -702,5 +704,13 @@ describe('Brilliant Boss set and Genesis final damage', () => {
         const umbra = known({ ...E.newItem('weapon', cat('Arcane Umbra Weapon')), baseStats: genesis.baseStats });
         build.items.weapon = known(genesis);
         near(E.fdGain(st, E.swapDelta(build.items, 'weapon', umbra, 'Ice/Lightning', 280)), (1 / 1.1 - 1) * 100, 1e-9);
+    });
+});
+
+describe('abnormal status damage', () => {
+    test('shares the damage pool with damage and boss damage', () => {
+        near(E.damageIndex({ ...SHEET, dmg: 59, statusDmg: 22 }), E.damageIndex({ ...SHEET, dmg: 81 }), 1e-9);
+        // so it trims what a boss line is worth
+        assert.ok(E.fdGain({ ...SHEET, statusDmg: 22 }, { boss: 40 }) < E.fdGain(SHEET, { boss: 40 }));
     });
 });

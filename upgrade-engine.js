@@ -59,6 +59,9 @@
             subBase: n(s.subBase), subPct: n(s.subPct), subFlat: n(s.subFlat),
             att: n(s.att), attPct: n(s.attPct),
             dmg: n(s.dmg), boss: n(s.boss),
+            // Damage to enemies under an abnormal status. Bosses nearly always
+            // carry a debuff, so it joins damage and boss damage in one pool.
+            statusDmg: n(s.statusDmg),
             critDmg: n(s.critDmg), ied: n(s.ied), fd: n(s.fd),
             // Final damage from a liberated Genesis or Destiny weapon's skill.
             // The stat window leaves it out, and it multiplies the other final
@@ -108,7 +111,7 @@
         // of it is taken at the 80% rate; only ratios matter here.
         const statValue = s.model === 'hp' ? 0.8 * main / 3.5 + sub : 4 * main + sub;
         const attack = s.att * (1 + s.attPct / 100);
-        const dmgMult = 1 + (s.dmg + s.boss) / 100;
+        const dmgMult = 1 + (s.dmg + s.boss + s.statusDmg) / 100;
         const critMult = 1.35 + s.critDmg / 100;
         const defMult = Math.max(0, 1 - (pdr / 100) * (1 - s.ied / 100) * (1 - s.skillIed / 100));
         const fdMult = (1 + s.fd / 100) * (1 + s.weaponFd / 100);
@@ -1643,9 +1646,8 @@
                 stats: normalizeStats({
                     mainBase: s.mainStatBase, mainPct: s.mainStatPer, mainFlat: s.mainStatAbs,
                     subBase: s.subStatBase, subPct: s.subStatPer, subFlat: s.subStatAbs,
-                    // Abnormal status damage joins the damage % pool: bosses
-                    // nearly always carry a debuff.
-                    att: s.atkBase, attPct: s.atkPercent, dmg: (+s.dmg || 0) + (+s.statusAdditionalDmg || 0), boss: s.bossDmg,
+                    att: s.atkBase, attPct: s.atkPercent, dmg: s.dmg, boss: s.bossDmg,
+                    statusDmg: s.statusAdditionalDmg,
                     critDmg: s.criticalDmg, ied: s.ignoreDef,
                     model: classStats(className).main === 'hp' ? 'hp' : 'normal',
                 }),
@@ -1672,6 +1674,7 @@
                 mainBase: cs.primaryStat, mainPct: cs.totalPercentStat, mainFlat: cs.additionalPrimaryStat,
                 subBase: cs.secondaryStat, subPct: cs.totalPercentSecondaryStat, subFlat: cs.additionalSecondaryStat,
                 att: cs.totalATT, attPct: cs.totalPercentATT, dmg: cs.damagePercent, boss: cs.bossDamagePercent,
+                statusDmg: cs.abnormalStatusDamage,
                 critDmg: cs.critDamagePercent, ied: ied <= 1 ? ied * 100 : ied, fd: cs.finalDamagePercent,
                 model: cs.statModel,
             }),

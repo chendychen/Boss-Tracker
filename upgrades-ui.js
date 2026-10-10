@@ -60,7 +60,7 @@ function upgradeStatFields(className) {
         ['mainBase', `${main} (base)`], ['mainPct', `${main} %`], ['mainFlat', `${main} (flat, not % scaled)`],
         ['subBase', `${sub} (base)`], ['subPct', `${sub} %`], ['subFlat', `${sub} (flat)`],
         ['att', atk], ['attPct', `${atk} %`], ['dmg', 'Damage %'], ['boss', 'Boss damage %'],
-        ['critDmg', 'Crit damage %'], ['ied', 'IED %'],
+        ['statusDmg', 'Abnormal status damage %'], ['critDmg', 'Crit damage %'], ['ied', 'IED %'],
     ];
 }
 
@@ -644,7 +644,6 @@ function renderScouterShot(character, build) {
             </tr>`;
     }).join('');
     const extras = [
-        p.statusDmg !== null ? `abnormal status damage ${p.statusDmg}% (added to Damage %)` : null,
         p.ier !== null ? `ignore elemental resistance ${p.ier}% (left out: no gear changes it)` : null,
         p.finalDamage !== null ? `final damage ${p.finalDamage}% (left out: it scales every upgrade alike)` : null,
     ].filter(Boolean);
@@ -679,9 +678,6 @@ function renderUpgradeStats(character, build) {
             <summary>Stat sheet</summary>
             <p class="upg-note">Base stats with no buffs, as MapleScouter's Enter Directly page takes them.
                 Only ratios matter, so small errors shift every upgrade alike.</p>
-            ${build.source === 'gms-upgrade-tracker' && !build.statsFrom ? `<p class="upg-note upg-shot-error">This sheet
-                came from an Upgrade Tracker export, which takes stats with class buffs. Read a MapleScouter
-                screenshot to replace it with base stats.</p>` : ''}
             ${renderScouterShot(character, build)}
             ${UpgradeEngine.analysisStats(build).weaponFd ? `<p class="upg-note">Your ${sanitizeInput(build.items.weapon.name || 'weapon')}'s
                 liberation skill adds ${UpgradeEngine.analysisStats(build).weaponFd}% final damage on top of the stat window,

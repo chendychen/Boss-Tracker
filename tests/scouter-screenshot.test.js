@@ -52,11 +52,11 @@ describe('MapleScouter screenshot text', () => {
         assert.equal(p.sacredForce, 800);
     });
 
-    test('maps onto the stat sheet, with abnormal status damage in Damage %', () => {
+    test('maps onto the stat sheet', () => {
         const { stats, missing } = S.statsFromScouter(S.parseScouterText(BOWMASTER), 'Bowmaster');
         assert.deepEqual({ ...stats }, {
             mainBase: 7054, mainPct: 525, mainFlat: 31410, subBase: 4453, subPct: 256, subFlat: 570,
-            att: 3790, attPct: 106, dmg: 59 + 22, boss: 696, critDmg: 142, ied: 98.94,
+            att: 3790, attPct: 106, dmg: 59, boss: 696, statusDmg: 22, critDmg: 142, ied: 98.94,
         });
         assert.equal(missing.length, 0);
     });
@@ -78,10 +78,11 @@ describe('MapleScouter screenshot text', () => {
         assert.equal(S.matchClass('Something Else'), null);
     });
 
-    test('a MapleScouter preset also counts abnormal status damage', () => {
+    test('a MapleScouter preset reads abnormal status damage into its own field', () => {
         const b = context.UpgradeEngine.importBuild({ type: 'maplescouter-manual-preset',
             data: { stat: { myClass: '보우마스터', dmg: '59', statusAdditionalDmg: '22', bossDmg: '696' } } });
-        assert.equal(b.stats.dmg, 81);
+        assert.equal(b.stats.dmg, 59);
+        assert.equal(b.stats.statusDmg, 22);
     });
 });
 
@@ -116,7 +117,8 @@ Additional Status D... 20 Summon Duration 12
         assert.equal(stats.mainFlat, 630800);
         assert.equal(stats.subBase, 3962);
         assert.equal(stats.att, 3585);
-        assert.equal(stats.dmg, 126);
+        assert.equal(stats.dmg, 104);
+        assert.equal(stats.statusDmg, 22);
     });
 
     test('a mage reads INT, LUK and the MATT row', () => {

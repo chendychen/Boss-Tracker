@@ -91,10 +91,9 @@
 
     /**
      * The Upgrades tab's stat sheet fields from parsed text, for a class (the
-     * character's, else the screenshot's). Abnormal status damage joins the
-     * damage % pool since bosses nearly always carry a debuff; ignore
-     * elemental resistance and final damage are left out because no gear line
-     * changes them, so they cannot change which upgrade is worth more.
+     * character's, else the screenshot's). Ignore elemental resistance and
+     * final damage are left out because no gear line changes them, so they
+     * cannot change which upgrade is worth more.
      * Returns { stats, missing }: stats holds only what was read.
      */
     function statsFromScouter(parsed, className) {
@@ -113,13 +112,14 @@
         if (main) { put('mainBase', main.base); put('mainPct', main.pct); put('mainFlat', main.flat); }
         if (sub) { put('subBase', sub.base); put('subPct', sub.pct); put('subFlat', sub.flat); }
         if (atk) { put('att', atk.base); put('attPct', atk.pct); }
-        if (parsed.damage !== null) put('dmg', parsed.damage + (parsed.statusDmg || 0));
+        put('dmg', parsed.damage);
         put('boss', parsed.boss);
+        put('statusDmg', parsed.statusDmg);
         put('critDmg', parsed.critDmg);
         put('ied', parsed.ied);
 
         const fields = ['mainBase', 'mainPct', 'mainFlat', 'subBase', 'subPct', 'subFlat',
-            'att', 'attPct', 'dmg', 'boss', 'critDmg', 'ied'];
+            'att', 'attPct', 'dmg', 'boss', 'statusDmg', 'critDmg', 'ied'];
         return { stats, missing: fields.filter(k => !(k in stats)) };
     }
 
