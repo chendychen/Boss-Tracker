@@ -165,6 +165,7 @@ function adoptUpgradeBuild(json, label) {
         ign: imported.ign || (current && current.ign) || null,
         className: getCharClass(character) || imported.className || null,
         stats: imported.stats,
+        statsFrom: null,                 // the import's own stats replace any screenshot's
         items: imported.items || (current && current.items) || null,
     };
     if (imported.level && !character.charLevel) character.charLevel = imported.level;
@@ -649,9 +650,7 @@ function renderScouterShot(character, build) {
     ].filter(Boolean);
     return picker + `
         <div class="upg-shot-review">
-            <p class="upg-note">Check these against the screenshot, fix anything misread, then apply.
-                MapleScouter's figures are without buffs, while this sheet expects your usual bossing buffs;
-                unbuffed numbers make ATT % and damage lines look slightly better than they are.</p>
+            <p class="upg-note">Check these against the screenshot, fix anything misread, then apply.</p>
             ${classNote}
             <table class="upg-shot-table">
                 <thead><tr><th>Field</th><th>Read</th><th>Now</th></tr></thead>
@@ -678,8 +677,11 @@ function renderUpgradeStats(character, build) {
         <details class="upg-card" ${statsOpen ? 'open' : ''}
                  ontoggle="onUpgradeDetailsToggle('stats', this.open, ${statsOpen})">
             <summary>Stat sheet</summary>
-            <p class="upg-note">Values from the in-game stat window with your usual bossing buffs.
+            <p class="upg-note">Base stats with no buffs, as MapleScouter's Enter Directly page takes them.
                 Only ratios matter, so small errors shift every upgrade alike.</p>
+            ${build.source === 'gms-upgrade-tracker' && !build.statsFrom ? `<p class="upg-note upg-shot-error">This sheet
+                came from an Upgrade Tracker export, which takes stats with class buffs. Read a MapleScouter
+                screenshot to replace it with base stats.</p>` : ''}
             ${renderScouterShot(character, build)}
             ${UpgradeEngine.analysisStats(build).weaponFd ? `<p class="upg-note">Your ${sanitizeInput(build.items.weapon.name || 'weapon')}'s
                 liberation skill adds ${UpgradeEngine.analysisStats(build).weaponFd}% final damage on top of the stat window,

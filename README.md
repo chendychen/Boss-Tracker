@@ -43,7 +43,7 @@ The server needs only Node, with no dependencies. It serves the app, reads and w
 
 ### Upgrades Tab
 - Per-character gear inventory, imported from a GMS Upgrade Tracker build export (Gear → Import / Export → Save this build to a file) dropped into `builds/`, or entered by hand from a catalog of endgame gear
-- Stat sheet read from a MapleScouter **Enter Directly** screenshot (choose or paste it): text recognition runs in the browser with Tesseract.js, loaded from jsdelivr on first use, and the numbers are shown for checking before they apply
+- Stat sheet of base stats with no buffs, read from a MapleScouter **Enter Directly** screenshot (choose or paste it): text recognition runs in the browser with Tesseract.js, loaded from jsdelivr on first use, and the numbers are shown for checking before they apply
 - Per-character class, which sets main and secondary stat and ATT or MATT, and filters potential lines to what the class uses
 - Gear editor with slot-aware potential line dropdowns, flames with the site's flame score, and what each is worth in final damage
 - Upgrade plan ranking star force, cubes and flames by expected mesos per 1% final damage, with the bosses each step brings on pace
