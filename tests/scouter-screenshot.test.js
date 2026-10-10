@@ -1,0 +1,138 @@
+import { test, describe } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import vm from 'node:vm';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const context = vm.createContext({});
+for (const f of ['upgrade-tables.js', 'upgrade-engine.js', 'scouter-screenshot.js']) {
+    vm.runInContext(readFileSync(join(__dirname, '..', f), 'utf8'), context);
+}
+const S = context.ScouterScreenshot;
+
+// What Tesseract read off a Bowmaster's Enter Directly page (stats panel only, 4x).
+const BOWMASTER = `Enter Directly (Character Stats Changes) Recall Saved Preset [i) Save Preset &,
+Level 295 Class Bow Master v
+
+# Reboot # Liberation Exo] gut Mugong Soul
+
+Base Value % Value % Value Not Applied
+
+DEX 7054 525 31410
+STR 4453 256 570
+Attack 3790 106 0
+General Range 132131728 Damage 59
+Final Damage 157.16 Boss Damage 696
+Ignore Enemy Defen... 98.94 Normal Enemy Dam...
+Attack 7807 Critical Rate 242
+M.Attack 7807 Critical Damage 142
+Cooldown Reduction O Second 6 % Buff Duration 64
+Cooldown Skip 75 Ignore Elemental Re... 1.5
+Additional Status D... 22 Summon Duration 12
+Arcane Force 1350 Sacred Force 800
+`;
+
+describe('MapleScouter screenshot text', () => {
+    test('reads the stat table and the single fields', () => {
+        const p = S.parseScouterText(BOWMASTER);
+        assert.equal(p.level, 295);
+        assert.equal(p.className, 'Bowmaster');
+        assert.deepEqual({ ...p.rows.dex }, { base: 7054, pct: 525, flat: 31410 });
+        assert.deepEqual({ ...p.rows.str }, { base: 4453, pct: 256, flat: 570 });
+        assert.deepEqual({ ...p.rows.att }, { base: 3790, pct: 106, flat: 0 });
+        assert.equal(p.damage, 59);
+        assert.equal(p.boss, 696);
+        assert.equal(p.finalDamage, 157.16);
+        assert.equal(p.ied, 98.94);
+        assert.equal(p.critDmg, 142);
+        assert.equal(p.statusDmg, 22);
+        assert.equal(p.ier, 1.5);
+        assert.equal(p.sacredForce, 800);
+    });
+
+    test('maps onto the stat sheet, with abnormal status damage in Damage %', () => {
+        const { stats, missing } = S.statsFromScouter(S.parseScouterText(BOWMASTER), 'Bowmaster');
+        assert.deepEqual({ ...stats }, {
+            mainBase: 7054, mainPct: 525, mainFlat: 31410, subBase: 4453, subPct: 256, subFlat: 570,
+            att: 3790, attPct: 106, dmg: 59 + 22, boss: 696, critDmg: 142, ied: 98.94,
+        });
+        assert.equal(missing.length, 0);
+    });
+
+    test('a dropped decimal point in IED is put back', () => {
+        assert.equal(S.parseScouterText('Ignore Enemy Defen... 9894 Normal Enemy Dam...').ied, 98.94);
+    });
+
+    test('missing fields are reported rather than guessed', () => {
+        const { stats, missing } = S.statsFromScouter(S.parseScouterText('Boss Damage 696'), 'Bowmaster');
+        assert.deepEqual({ ...stats }, { boss: 696 });
+        assert.ok(missing.includes('mainBase') && missing.includes('dmg'));
+    });
+
+    test('class names match through spacing and a trailing dropdown arrow', () => {
+        assert.equal(S.matchClass('Bow Master Vv'), 'Bowmaster');
+        assert.equal(S.matchClass('Night Lord'), 'Night Lord');
+        assert.equal(S.matchClass('Demon Avenger v'), 'Demon Avenger');
+        assert.equal(S.matchClass('Something Else'), null);
+    });
+
+    test('a MapleScouter preset also counts abnormal status damage', () => {
+        const b = context.UpgradeEngine.importBuild({ type: 'maplescouter-manual-preset',
+            data: { stat: { myClass: '보우마스터', dmg: '59', statusAdditionalDmg: '22', bossDmg: '696' } } });
+        assert.equal(b.stats.dmg, 81);
+    });
+});
+
+describe('other classes on the Enter Directly page', () => {
+    const DEMON_AVENGER = `Level 285 Class Demon Avenger
+Base Value % Value % Value Not Applied
+HP 131907 546 630800
+STR 3962 84 510
+Attack 3585 69 0
+General Range 116813423 Damage 104
+Final Damage 108.79 Boss Damage 496
+Ignore Enemy Defen... 96.08 Normal Enemy Dam...
+M.Attack 6058 Critical Damage 128.2
+Additional Status D... 22 Summon Duration 12
+`;
+    const ICE_LIGHTNING = `Level 280 Class Ice Lightning v
+INT 5451 426 25990
+LUK 3275 173 410
+M.Attack 2953 47 0
+General Range 98754915 Damage 95
+Final Damage 326.50 Boss Damage 438
+Ignore Enemy Defen... 98.94 Normal Enemy Dam...
+M.Attack 4340 Critical Damage 111.85
+Additional Status D... 20 Summon Duration 12
+`;
+
+    test('Demon Avenger reads HP as the main stat', () => {
+        const p = S.parseScouterText(DEMON_AVENGER);
+        assert.equal(p.className, 'Demon Avenger');
+        const { stats } = S.statsFromScouter(p, 'Demon Avenger');
+        assert.equal(stats.mainBase, 131907);
+        assert.equal(stats.mainFlat, 630800);
+        assert.equal(stats.subBase, 3962);
+        assert.equal(stats.att, 3585);
+        assert.equal(stats.dmg, 126);
+    });
+
+    test('a mage reads INT, LUK and the MATT row', () => {
+        const p = S.parseScouterText(ICE_LIGHTNING);
+        assert.equal(p.className, 'Ice/Lightning');
+        const { stats, missing } = S.statsFromScouter(p, 'Ice/Lightning');
+        assert.deepEqual([stats.mainBase, stats.mainPct, stats.subBase, stats.att, stats.attPct, stats.critDmg],
+            [5451, 426, 3275, 2953, 47, 111.85]);
+        assert.equal(missing.length, 0);
+    });
+
+    test('a Demon Avenger sheet is valued by HP whatever filled it', () => {
+        const E = context.UpgradeEngine;
+        const st = E.analysisStats({ className: 'Demon Avenger', stats: { mainBase: 100000, subBase: 4000, att: 3000 }, items: {} });
+        assert.equal(st.model, 'hp');
+        const b = E.importBuild({ type: 'maplescouter-manual-preset', data: { stat: { myClass: '데몬어벤져' } } });
+        assert.equal(b.stats.model, 'hp');
+    });
+});

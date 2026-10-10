@@ -945,6 +945,9 @@
         const s = { ...DEFAULT_SETTINGS, ...settings };
         return normalizeStats({
             ...build.stats,
+            // Demon Avenger's damage comes from HP whichever source filled the
+            // sheet; only Upgrade Tracker exports say so themselves.
+            model: classStats(build.className).main === 'hp' ? 'hp' : build.stats && build.stats.model,
             cdr: gearCdr(build.items, build.className),
             cdrValue: +s.cdrValue,
             cdrCurve: s.cdrCurve || null,
@@ -1631,16 +1634,20 @@
 
         if (json.type === 'maplescouter-manual-preset' && json.data && json.data.stat) {
             const s = json.data.stat;
+            const className = KOREAN_CLASS[s.myClass] || s.myClass || null;
             return {
                 source: 'maplescouter',
                 ign: null,
-                className: KOREAN_CLASS[s.myClass] || s.myClass || null,
+                className,
                 level: +s.level || null,
                 stats: normalizeStats({
                     mainBase: s.mainStatBase, mainPct: s.mainStatPer, mainFlat: s.mainStatAbs,
                     subBase: s.subStatBase, subPct: s.subStatPer, subFlat: s.subStatAbs,
-                    att: s.atkBase, attPct: s.atkPercent, dmg: s.dmg, boss: s.bossDmg,
+                    // Abnormal status damage joins the damage % pool: bosses
+                    // nearly always carry a debuff.
+                    att: s.atkBase, attPct: s.atkPercent, dmg: (+s.dmg || 0) + (+s.statusAdditionalDmg || 0), boss: s.bossDmg,
                     critDmg: s.criticalDmg, ied: s.ignoreDef,
+                    model: classStats(className).main === 'hp' ? 'hp' : 'normal',
                 }),
                 items: null,
             };

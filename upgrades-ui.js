@@ -529,10 +529,149 @@ function renderUpgradeSettings() {
         </details>`;
 }
 
+// ── MapleScouter screenshot ────────────────────────────────────────────────
+
+// The screenshot being read for one character: { characterId, status:
+// 'reading' | 'review' | 'error', progress, text, parsed, stats, missing, error }.
+let scouterShot = null;
+
+function activeScouterShot(character) {
+    return scouterShot && character && scouterShot.characterId === character.id ? scouterShot : null;
+}
+
+/** Reads a MapleScouter "Enter Directly" screenshot into a review form. */
+async function readScouterShot(file) {
+    const character = getActiveCharacter();
+    if (!character || !file) return;
+    if (!/^image\//.test(file.type)) { alert('Choose an image file (a screenshot).'); return; }
+    const id = character.id;
+    scouterShot = { characterId: id, status: 'reading', progress: 'Starting' };
+    renderUpgradesContent();
+    try {
+        const { text, parsed } = await ScouterScreenshot.readScouterScreenshot(file, progress => {
+            const shot = scouterShot && scouterShot.characterId === id && scouterShot.status === 'reading' ? scouterShot : null;
+            if (!shot) return;
+            shot.progress = progress;
+            const el = document.getElementById('scouterShotProgress');
+            if (el) el.textContent = progress;
+        });
+        if (!scouterShot || scouterShot.characterId !== id) return;      // cancelled meanwhile
+        const read = ScouterScreenshot.statsFromScouter(parsed, getCharClass(character));
+        scouterShot = { characterId: id, status: 'review', text, parsed, ...read };
+    } catch (e) {
+        if (!scouterShot || scouterShot.characterId !== id) return;
+        scouterShot = { characterId: id, status: 'error', error: e.message || String(e) };
+    }
+    if (activeMainTab === 'upgrades') renderUpgradesContent();
+}
+
+function cancelScouterShot() {
+    scouterShot = null;
+    renderUpgradesContent();
+}
+
+/** Puts the reviewed numbers into the stat sheet. */
+function applyScouterShot() {
+    const character = getActiveCharacter();
+    const shot = activeScouterShot(character);
+    if (!shot || shot.status !== 'review') return;
+    if (!getCharClass(character) && shot.parsed.className) character.className = shot.parsed.className;
+    const build = ensureUpgradeBuild(character);
+    build.className = getCharClass(character);
+    const stats = {};
+    for (const [k] of upgradeStatFields(getCharClass(character))) {
+        const el = document.getElementById(`scouterShot_${k}`);
+        const v = el ? parseFloat(el.value) : NaN;
+        if (Number.isFinite(v)) stats[k] = v;
+    }
+    build.stats = { ...UpgradeEngine.normalizeStats(build.stats), ...stats };
+    build.statsFrom = { source: 'MapleScouter screenshot', at: new Date().toISOString().slice(0, 10) };
+    delete build.statsStale;
+    scouterShot = null;
+    saveToLocalStorage();
+    renderUpgradesCharacterTabs();
+    renderUpgradesContent();
+}
+
+// Pasting an image anywhere on the Upgrades tab reads it.
+document.addEventListener('paste', event => {
+    if (typeof activeMainTab === 'undefined' || activeMainTab !== 'upgrades') return;
+    const item = [...((event.clipboardData && event.clipboardData.items) || [])].find(i => i.type.startsWith('image/'));
+    if (!item) return;
+    event.preventDefault();
+    readScouterShot(item.getAsFile());
+});
+
+function renderScouterShot(character, build) {
+    const shot = activeScouterShot(character);
+    const from = build.statsFrom;
+    const picker = `
+        <div class="upg-shot-pick">
+            <button class="save-btn" onclick="document.getElementById('scouterShotInput').click()"
+                    ${shot && shot.status === 'reading' ? 'disabled' : ''}>Read a MapleScouter screenshot</button>
+            <span class="upg-hint">or paste one (Ctrl+V) on this tab. Use the Enter Directly page; the image is read
+                in your browser and never uploaded.${from ? ` Last filled from a ${sanitizeInput(from.source)} on ${from.at}.` : ''}</span>
+            <input type="file" id="scouterShotInput" accept="image/*" hidden
+                   onchange="readScouterShot(this.files[0]); this.value = ''">
+        </div>`;
+    if (!shot) return picker;
+    if (shot.status === 'reading') {
+        return picker + `<p class="upg-note" id="scouterShotProgress">${sanitizeInput(shot.progress)}</p>`;
+    }
+    if (shot.status === 'error') {
+        return picker + `<p class="upg-note upg-shot-error">${sanitizeInput(shot.error)}
+            <button class="sell-link" onclick="cancelScouterShot()">Dismiss</button></p>`;
+    }
+
+    const cls = getCharClass(character);
+    const p = shot.parsed;
+    const current = UpgradeEngine.normalizeStats(build.stats);
+    const classNote = p.className && cls && p.className !== cls
+        ? `<p class="upg-note upg-shot-error">The screenshot is a ${sanitizeInput(p.className)}, but ${sanitizeInput(character.name)}
+            is set as ${sanitizeInput(cls)}; its rows were read as ${sanitizeInput(cls)}'s stats.</p>`
+        : !cls && !p.className ? `<p class="upg-note upg-shot-error">Class not recognised${p.classRaw ? ` ("${sanitizeInput(p.classRaw)}")` : ''};
+            the first stat row was taken as the main stat. Set the class above if that is wrong.</p>` : '';
+    const rows = upgradeStatFields(cls || p.className).map(([k, label]) => {
+        const v = shot.stats[k];
+        const missing = v === undefined;
+        return `
+            <tr class="${missing ? 'upg-shot-missing' : ''}">
+                <td>${label}</td>
+                <td><input type="number" step="any" id="scouterShot_${k}" value="${missing ? '' : v}"
+                           placeholder="not read"></td>
+                <td class="upg-sub">${current[k] || 0}</td>
+            </tr>`;
+    }).join('');
+    const extras = [
+        p.statusDmg !== null ? `abnormal status damage ${p.statusDmg}% (added to Damage %)` : null,
+        p.ier !== null ? `ignore elemental resistance ${p.ier}% (left out: no gear changes it)` : null,
+        p.finalDamage !== null ? `final damage ${p.finalDamage}% (left out: it scales every upgrade alike)` : null,
+    ].filter(Boolean);
+    return picker + `
+        <div class="upg-shot-review">
+            <p class="upg-note">Check these against the screenshot, fix anything misread, then apply.
+                MapleScouter's figures are without buffs, while this sheet expects your usual bossing buffs;
+                unbuffed numbers make ATT % and damage lines look slightly better than they are.</p>
+            ${classNote}
+            <table class="upg-shot-table">
+                <thead><tr><th>Field</th><th>Read</th><th>Now</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+            ${extras.length ? `<p class="upg-hint">Also read: ${extras.join(' · ')}.</p>` : ''}
+            <div class="upg-line">
+                <button class="save-btn" onclick="applyScouterShot()">Apply to stat sheet</button>
+                <button class="sell-link" onclick="cancelScouterShot()">Cancel</button>
+            </div>
+            <details class="upg-shot-text"><summary>Recognised text</summary><pre>${sanitizeInput(shot.text)}</pre></details>
+        </div>`;
+}
+
 function renderUpgradeStats(character, build) {
     const stats = UpgradeEngine.normalizeStats(build.stats);
-    // Open by default only while there is no gear, when the sheet is the next step.
-    const statsOpen = upgradeSectionOpen('stats', !(build.items && Object.keys(build.items).length));
+    // Open by default only while there is no gear, when the sheet is the next step,
+    // and always while a screenshot is being read or reviewed.
+    const statsOpen = !!activeScouterShot(character)
+        || upgradeSectionOpen('stats', !(build.items && Object.keys(build.items).length));
     const src = character.skillIedSource;
     const grandis = UpgradeEngine.classSkillIedBreakdown(getCharClass(character), character.skillIedSkills);
     return `
@@ -541,6 +680,7 @@ function renderUpgradeStats(character, build) {
             <summary>Stat sheet</summary>
             <p class="upg-note">Values from the in-game stat window with your usual bossing buffs.
                 Only ratios matter, so small errors shift every upgrade alike.</p>
+            ${renderScouterShot(character, build)}
             ${UpgradeEngine.analysisStats(build).weaponFd ? `<p class="upg-note">Your ${sanitizeInput(build.items.weapon.name || 'weapon')}'s
                 liberation skill adds ${UpgradeEngine.analysisStats(build).weaponFd}% final damage on top of the stat window,
                 which leaves it out. Swapping the weapon away loses it.</p>` : ''}

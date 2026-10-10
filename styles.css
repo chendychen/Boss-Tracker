@@ -1007,6 +1007,19 @@ tr.upg-editor-row > td { background: var(--cds-layer-02); padding: var(--spacing
 .sell-state { color: #8d8d8d; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sell-done .sell-boss-name { color: #8d8d8d; text-decoration: line-through; }
 .sell-done .sell-state { color: #42be65; font-weight: 600; }
+/* Upgrades: reading a MapleScouter screenshot */
+.upg-shot-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 12px; }
+.upg-shot-pick .save-btn:disabled { opacity: 0.6; cursor: wait; }
+.upg-shot-review { background: #262626; border-left: 3px solid #0f62fe; padding: 10px 14px; margin-bottom: 14px; }
+.upg-shot-error { color: #ff8389; }
+.upg-shot-table { border-collapse: collapse; margin: 8px 0; }
+.upg-shot-table th, .upg-shot-table td { padding: 3px 10px 3px 0; text-align: left; }
+.upg-shot-table th { color: #8d8d8d; font-weight: 400; font-size: 0.85em; }
+.upg-shot-table input { width: 110px; background: #161616; color: #f4f4f4; border: 1px solid #525252; padding: 3px 6px; }
+.upg-shot-missing td:first-child { color: #ff8389; }
+.upg-shot-missing input { border-color: #da1e28; }
+.upg-shot-text pre { white-space: pre-wrap; font-size: 0.8em; color: #a8a8a8; max-height: 220px; overflow: auto; }
+
 .sell-bm {
     display: flex;
     align-items: center;
