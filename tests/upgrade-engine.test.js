@@ -755,3 +755,16 @@ describe('potential presets', () => {
         assert.deepEqual(lines('hat', 250, 'Pathfinder', '2s cooldown'), ['cdr 2', 'dex% 10', 'dex% 10']);
     });
 });
+
+describe('set pieces an export leaves without a set', () => {
+    test('the Crystal Ventus Badge counts toward the Boss Accessory set', () => {
+        const items = {
+            badge: { name: 'Crystal Ventus Badge', set: 'None' },
+            eye: { name: 'Papulatus Mark', set: 'Boss Accessory' },
+            pocket: { name: 'Pink Holy Cup', set: 'Boss Accessory' },
+        };
+        assert.equal(E.itemSet(items.badge), 'Boss Accessory');
+        assert.equal(E.setCounts(items)['Boss Accessory'], 3);
+        assert.equal(E.itemSet({ name: 'Something custom', set: 'None' }), 'None');
+    });
+});

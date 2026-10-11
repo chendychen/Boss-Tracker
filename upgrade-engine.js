@@ -1332,7 +1332,8 @@
         G('pocket', 'Pink Holy Cup', 140, 'Boss Accessory', 0),
         G('heart', 'Black Heart', 120, 'Pitched Boss', 0, [10, 77, 0], { sfKind: 'special', stars: 15, starCap: 15 }),
         G('heart', 'Plasma Heart', 130, 'None', 3e9, [10, 5, 0]),
-        G('badge', 'Crystal Ventus Badge', 130, 'None', 0, [10, 5, 0]),
+        G('heart', 'Fairy Heart', 100, 'None', 0, [0, 0, 100], { starCap: 8 }),
+        G('badge', 'Crystal Ventus Badge', 130, 'Boss Accessory', 0, [10, 5, 0]),
         G('medal', 'Immortal Legacy', 250, 'Brilliant Boss', 0, [10, 10, 500, { boss: 10 }], { sfKind: 'special' }),
         G('medal', 'Medal', 1, 'None', 0),
     ];
@@ -1374,13 +1375,26 @@
      * set (Eternal) and also counts once toward every other set that has a
      * weapon piece, where at least 3 real pieces are worn (the lucky item rule).
      */
+    /**
+     * The set an item counts toward. Upgrade Tracker exports leave some set
+     * pieces as "None" (the Crystal Ventus Badge), so a catalog item's own
+     * set fills in by name.
+     */
+    function itemSet(item) {
+        if (!item) return 'None';
+        if (item.set && item.set !== 'None') return item.set;
+        const known = GEAR_CATALOG.find(g => g.name === item.name);
+        return (known && known.set) || 'None';
+    }
+
     function setCounts(items) {
         const counts = {};
         let lucky = null;
         for (const item of Object.values(items || {})) {
-            if (!item || !item.set || item.set === 'None') continue;
-            counts[item.set] = (counts[item.set] || 0) + 1;
-            if (isLucky(item)) lucky = item.set;
+            const set = itemSet(item);
+            if (set === 'None') continue;
+            counts[set] = (counts[set] || 0) + 1;
+            if (isLucky(item)) lucky = set;
         }
         const out = { ...counts };
         if (lucky) {
@@ -1748,6 +1762,6 @@
         flameScore, itemContribution, restatItem, lineStatsForSlot, lineValuesFor, potentialPresets, LINE_LABELS,
         describeClass, STAT_NAMES, describeLines, weighIed, lineSetScorer, solveSkillIed, classSkillIedBreakdown, CDR_CURVES, cdrCurveAt, gearCdr, analysisStats, targetUnit, lineEquivalent, scoreThresholds, equivalenceLegend,
         GEAR_CATALOG, STANDARD_SLOTS, newItem,
-        setCounts, setDelta, baseDelta, baseKnown, itemFull, swapDelta, swapDeltaMany, describeSetChange, swapOptions,
+        itemSet, setCounts, setDelta, baseDelta, baseKnown, itemFull, swapDelta, swapDeltaMany, describeSetChange, swapOptions,
     });
 })(typeof globalThis !== 'undefined' ? globalThis : this);
