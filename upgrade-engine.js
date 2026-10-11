@@ -1352,7 +1352,8 @@
             starforceItemKind: e.sfKind, currentStars: e.stars || 0, starforceCap: e.starCap || 0,
             category: slot === 'weapon' || slot === 'secondary' || slot === 'emblem' ? 'weapon' : 'armor',
             isWSE: ['weapon', 'secondary', 'emblem'].includes(slot),
-            potentialTier: /badge|medal/.test(slot) || e.sfKind === 'special' ? 'none' : 'legendary',
+            // Badges, medals and pocket items take no potential.
+            potentialTier: /badge|medal|pocket/.test(slot) || e.sfKind === 'special' ? 'none' : 'legendary',
             potentialLines: [], potentialPhysicalLineCount: 3, locked: !!e.locked,
             flames: {}, baseStats: { str: stat, dex: stat, int: stat, luk: stat, att, matt: att, hp, ...(other || {}) },
         });

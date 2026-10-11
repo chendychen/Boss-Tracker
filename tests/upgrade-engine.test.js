@@ -768,3 +768,11 @@ describe('set pieces an export leaves without a set', () => {
         assert.equal(E.itemSet({ name: 'Something custom', set: 'None' }), 'None');
     });
 });
+
+describe('pocket items', () => {
+    test('take no potential and are never cubed', () => {
+        const it = E.newItem('pocket', E.GEAR_CATALOG.find(g => g.name === 'Cursed Spellbook'));
+        assert.equal(it.potTier, 'none');
+        assert.equal(E.TABLES.cubePool('pocket', 160), null);
+    });
+});

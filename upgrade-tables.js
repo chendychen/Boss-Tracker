@@ -197,7 +197,7 @@
             prime: [...stats4(12, 12.1212), P('hp%', 12, 12.1212), P('allstat%', 9, 9.0909), P('other', 0, 12.12 + 9.0909 * 2)],
             nonPrime: [...stats4(9, 10.4167), P('hp%', 9, 12.5), P('allstat%', 6, 8.3333), P('other', 0, 20.83 + 8.3333 * 2)],
         },
-        accessory: {   // rings, pendants, earrings, face, eye, pocket share the accessory pool
+        accessory: {   // rings, pendants, earrings, face and eye share the accessory pool
             prime: [...stats4(12, 10.2564), P('hp%', 12, 10.2564), P('allstat%', 9, 7.6923), P('other', 0, 25.64 + 7.6923 * 2)],
             nonPrime: [...stats4(9, 12.5), P('hp%', 9, 15), P('allstat%', 6, 10), P('other', 0, 25)],
         },
@@ -216,7 +216,7 @@
         shoulder: 'shoulder', belt: 'belt', heart: 'heart',
         ring1: 'accessory', ring2: 'accessory', ring3: 'accessory', ring4: 'accessory',
         pendant1: 'accessory', pendant2: 'accessory', earring: 'accessory', face: 'accessory',
-        eye: 'accessory', pocket: 'accessory',
+        eye: 'accessory',      // pocket items take no potential, so they have no pool
     };
 
     // GMS items above level 150 roll one point higher on percentage lines.
