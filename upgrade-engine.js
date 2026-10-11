@@ -1575,6 +1575,28 @@
         }
 
         /**
+         * For a move that loses at the star target: the first star above it,
+         * up to each item's own cap, at which it breaks even, with the mesos
+         * to get there. Null when it never does.
+         */
+        const breakEvenAbove = changes => {
+            const pieces = Object.values(changes).filter(n => n.sfKind === 'ordinary');
+            if (!pieces.length) return null;
+            const cap = Math.max(...pieces.map(n => tables.sfMaxStars(n.level)));
+            for (let star = Math.max(...pieces.map(n => n.stars)) + 1; star <= cap; star++) {
+                const at = {};
+                for (const [sl, n] of Object.entries(changes)) {
+                    at[sl] = n.sfKind === 'ordinary' ? { ...n, stars: Math.min(star, tables.sfMaxStars(n.level)) } : n;
+                }
+                const delta = swapDeltaMany(items, at, build.className, charLevel);
+                if (delta && fdGain(stats, delta, pdr) >= 0) {
+                    return { stars: star, cost: Object.values(at).reduce((a, n) => a + starCost(n), 0) };
+                }
+            }
+            return null;
+        };
+
+        /**
          * A whole-set move done one piece at a time, best next piece first.
          * Each step is priced against the gear as it stands after the steps
          * before it (those pieces at the target star), with its own
@@ -1606,9 +1628,9 @@
                 }
                 const before = setCounts(cur);
                 const raw = {};
-                Object.values(cur).forEach(i => { if (i && i.set && i.set !== 'None') raw[i.set] = (raw[i.set] || 0) + 1; });
+                Object.values(cur).forEach(i => { const set = itemSet(i); if (set !== 'None') raw[set] = (raw[set] || 0) + 1; });
                 const after = setCounts({ ...cur, [sl]: next });
-                const old = cur[sl] && cur[sl].set;
+                const old = cur[sl] && itemSet(cur[sl]);
                 const luckyLost = old && before[old] > (raw[old] || 0) && (after[old] || 0) <= (raw[old] || 0) - 1;
                 mult *= 1 + gain / 100;
                 steps.push({
@@ -1625,34 +1647,51 @@
             return steps;
         };
 
-        // Whole-set swaps: every armor piece of one set into another at once.
-        // A set bonus often makes the first piece a loss and the full move a
-        // gain (three CRA pieces held at 4 by a lucky weapon, say).
-        const ARMOR = ['hat', 'top', 'bottom', 'shoes', 'gloves', 'cape', 'shoulder'];
-        const fromSets = new Set(ARMOR.map(sl => items[sl] && items[sl].set).filter(x => x && x !== 'None'));
-        for (const fromSet of fromSets) {
-            const slots = ARMOR.filter(sl => items[sl] && items[sl].set === fromSet && swappable(sl, items[sl]));
-            if (slots.length < 2) continue;
-            for (const toSet of ['Eternal', 'Arcane Umbra', 'AbsoLab']) {
-                if (toSet === fromSet) continue;
-                const changes = {};
-                for (const sl of slots) {
-                    const entry = GEAR_CATALOG.find(g => g.slot === sl && g.set === toSet && g.base);
-                    if (entry) changes[sl] = replacement(sl, items[sl], entry);
+        // Whole-set swaps: every piece of one set into another at once, for
+        // armor sets and for accessory sets (Gollux into pitched, say). A set
+        // bonus often makes the first piece a loss and the full move a gain
+        // (three CRA pieces held at 4 by a lucky weapon, say).
+        const GROUPS = [
+            { slots: ['hat', 'top', 'bottom', 'shoes', 'gloves', 'cape', 'shoulder'],
+              to: ['Eternal', 'Arcane Umbra', 'AbsoLab'] },
+            { slots: ['face', 'eye', 'earring', 'pendant1', 'pendant2', 'belt', 'ring1', 'ring2', 'ring3', 'ring4', 'pocket'],
+              to: ['Pitched Boss', 'Brilliant Boss'] },
+        ];
+        for (const group of GROUPS) {
+            const fromSets = new Set(group.slots.map(sl => itemSet(items[sl])).filter(x => x !== 'None'));
+            for (const fromSet of fromSets) {
+                const slots = group.slots.filter(sl => items[sl] && itemSet(items[sl]) === fromSet && swappable(sl, items[sl]));
+                if (slots.length < 2) continue;
+                for (const toSet of group.to) {
+                    if (toSet === fromSet) continue;
+                    // Each replacement once, and never one already worn: two
+                    // pendant or ring slots cannot both take the same pitched piece.
+                    const changes = {};
+                    const used = new Set(worn);
+                    for (const sl of slots) {
+                        const entry = GEAR_CATALOG.find(g => g.slot === sl && g.set === toSet && g.base && !used.has(g.name));
+                        if (!entry) continue;
+                        used.add(entry.name);
+                        changes[sl] = replacement(sl, items[sl], entry);
+                    }
+                    const moved = Object.keys(changes);
+                    if (moved.length < 2) continue;
+                    const delta = swapDeltaMany(items, changes, build.className, charLevel);
+                    if (!delta) continue;
+                    const gain = fdGain(stats, delta, pdr);
+                    // A move that loses at the target is still listed when it
+                    // pays further up (Gollux into pitched often needs 24-25 stars).
+                    const above = gain <= 0.005 ? breakEvenAbove(changes) : null;
+                    if (gain <= 0.005 && !above) continue;
+                    out.push({
+                        type: 'swap', slots: moved, from: `${fromSet} ${moved.join(', ')}`,
+                        to: `${toSet} ${moved.join(', ')}`, stars: Object.values(changes)[0].stars,
+                        fdGain: gain, cost: Object.values(changes).reduce((a, n) => a + starCost(n), 0),
+                        via: VIA[toSet] || 'drop', sets: describeSetChange(items, changes), whole: true,
+                        breakEven: above || breakEven(changes), paysAboveTarget: !!above,
+                        steps: pieceByPiece(changes),
+                    });
                 }
-                const moved = Object.keys(changes);
-                if (moved.length < 2) continue;
-                const delta = swapDeltaMany(items, changes, build.className, charLevel);
-                if (!delta) continue;
-                const gain = fdGain(stats, delta, pdr);
-                if (gain <= 0.005) continue;
-                out.push({
-                    type: 'swap', slots: moved, from: `${fromSet} ${moved.join(', ')}`,
-                    to: `${toSet} ${moved.join(', ')}`, stars: Object.values(changes)[0].stars,
-                    fdGain: gain, cost: Object.values(changes).reduce((a, n) => a + starCost(n), 0),
-                    via: VIA[toSet] || 'drop', sets: describeSetChange(items, changes), whole: true,
-                    breakEven: breakEven(changes), steps: pieceByPiece(changes),
-                });
             }
         }
         return out.sort((a, b) => b.fdGain - a.fdGain);

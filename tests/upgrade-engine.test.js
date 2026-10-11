@@ -812,3 +812,21 @@ describe('potential values by item level and tier', () => {
         assert.equal(best(E.TABLES.cubePool('weapon', 30).prime, 'boss%'), 40);
     });
 });
+
+describe('accessory set swaps', () => {
+    const cat = name => E.GEAR_CATALOG.find(g => g.name === name);
+    const piece = (slot, name) => ({ ...E.newItem(slot, cat(name)), stars: 22 });
+    test('Gollux pieces are weighed as a whole move into pitched', () => {
+        const items = {
+            earring: piece('earring', 'Superior Gollux Earring'), belt: piece('belt', 'Superior Engraved Gollux Belt'),
+            pendant1: piece('pendant1', 'Superior Gollux Pendant'), ring1: piece('ring1', 'Superior Gollux Ring'),
+        };
+        const build = { className: 'Hero', stats: { ...SHEET, att: 3000 }, items };
+        const move = [...E.swapOptions(build, {}, { charLevel: 280 })]
+            .find(o => o.whole && /Superior Gollux/.test(o.from) && /Pitched Boss/.test(o.to));
+        assert.ok(move, 'expected a Gollux to pitched move');
+        assert.match(move.sets, /Superior Gollux 4→0/);
+        assert.equal(new Set([...move.steps].map(s => s.to)).size, move.steps.length, 'each pitched piece used once');
+        if (move.fdGain <= 0) assert.ok(move.paysAboveTarget && move.breakEven.stars > 22);
+    });
+});

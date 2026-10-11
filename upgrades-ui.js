@@ -1487,8 +1487,9 @@ function renderUpgradeSwaps(character, build) {
                                 <span class="upg-sub">→ ${sanitizeInput(o.to)} ${o.stars ? `${o.stars}★` : ''}</span></td>
                             <td class="upg-sub">${sanitizeInput(o.sets)}</td>
                             <td>${o.breakEven ? `<strong>${o.breakEven.stars}★</strong>
-                                <span class="upg-sub">${o.breakEven.cost ? fmtMeso(o.breakEven.cost) : 'no star force needed'}</span>` : '—'}</td>
-                            <td class="upg-gain">+${o.fdGain.toFixed(2)}%</td>
+                                <span class="upg-sub">${o.breakEven.cost ? fmtMeso(o.breakEven.cost) : 'no star force needed'}</span>
+                                ${o.paysAboveTarget ? '<span class="upg-sub">above your target</span>' : ''}` : '—'}</td>
+                            <td class="${o.fdGain >= 0 ? 'upg-gain' : 'upg-miss'}">${o.fdGain >= 0 ? '+' : ''}${o.fdGain.toFixed(2)}%</td>
                             <td>${o.cost ? fmtMeso(o.cost) : '—'}</td>
                             <td class="upg-sub">${sanitizeInput(o.via)}</td>
                         </tr>
