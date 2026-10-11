@@ -790,3 +790,25 @@ describe('weapon flame tiers', () => {
         assert.equal(E.weaponFlameAttTiers(weapon('Genesis Weapon', 200, null), 'Bowmaster').length, 0);
     });
 });
+
+describe('potential values by item level and tier', () => {
+    const best = (pool, stat) => Math.max(...[...pool].filter(l => l.stat === stat).map(l => l.value));
+    test('a unique level-30 Lidium Heart rolls 3% / 2% stat and 2% all stat', () => {
+        const p = E.TABLES.cubePool('heart', 30, 'unique');
+        assert.equal(best(p.prime, 'str%'), 3);
+        assert.equal(best(p.prime, 'allstat%'), 2);
+        assert.equal(best(p.nonPrime, 'str%'), 2);
+        const preset = [...E.potentialPresets('heart', 30, 'Hero', 'unique')].find(x => x.label === '3L stat');
+        assert.deepEqual([...preset.lines].map(l => l.value), [3, 2, 2]);
+    });
+    test('main stat follows the documented bands at legendary', () => {
+        for (const [level, prime, non] of [[30, 6, 3], [70, 9, 6], [150, 12, 9], [200, 13, 10]]) {
+            const p = E.TABLES.cubePool('hat', level);
+            assert.equal(best(p.prime, 'dex%'), prime, `prime at ${level}`);
+            assert.equal(best(p.nonPrime, 'dex%'), non, `non-prime at ${level}`);
+        }
+    });
+    test('fixed lines such as boss and IED do not scale', () => {
+        assert.equal(best(E.TABLES.cubePool('weapon', 30).prime, 'boss%'), 40);
+    });
+});

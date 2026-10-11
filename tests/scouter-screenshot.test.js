@@ -35,13 +35,14 @@ Arcane Force 1350 Sacred Force 800
 `;
 
 describe('MapleScouter screenshot text', () => {
+    const pick = r => ({ base: r.base, pct: r.pct, flat: r.flat });
     test('reads the stat table and the single fields', () => {
         const p = S.parseScouterText(BOWMASTER);
         assert.equal(p.level, 295);
         assert.equal(p.className, 'Bowmaster');
-        assert.deepEqual({ ...p.rows.dex }, { base: 7054, pct: 525, flat: 31410 });
-        assert.deepEqual({ ...p.rows.str }, { base: 4453, pct: 256, flat: 570 });
-        assert.deepEqual({ ...p.rows.att }, { base: 3790, pct: 106, flat: 0 });
+        assert.deepEqual(pick(p.rows.dex), { base: 7054, pct: 525, flat: 31410 });
+        assert.deepEqual(pick(p.rows.str), { base: 4453, pct: 256, flat: 570 });
+        assert.deepEqual(pick(p.rows.att), { base: 3790, pct: 106, flat: 0 });
         assert.equal(p.damage, 59);
         assert.equal(p.boss, 696);
         assert.equal(p.finalDamage, 157.16);
@@ -183,5 +184,48 @@ ATT/MATT per 40% BD | | ATT/MATT per 45% BD
         const r = S.bubbleRegion(words, /^EQP$/);
         assert.ok(r.x > 160 && r.x < 180, `left edge ${r.x}`);
         assert.ok(r.y > 795, `below the ID line, got ${r.y}`);
+    });
+});
+
+describe('misread crit damage', () => {
+    test('a dropped decimal point is put back', () => {
+        assert.equal(S.parseScouterText('M.Attack 6058 Critical Damage 1282').critDmg, 128.2);
+        assert.equal(S.parseScouterText('M.Attack 6058 Critical Damage 142').critDmg, 142);
+    });
+});
+
+describe('misread row labels', () => {
+    const DARK_KNIGHT = (strLabel) => `Level 275 Class Dark Knight
+Base Value % Value % Value Not Applied
+${strLabel} 6210 402 24310
+DEX 3109 161 530
+Attack 2834 37 0
+General Range 98754915 Damage 66
+`;
+    test('a one-letter misread of STR still reads as STR', () => {
+        const { stats } = S.statsFromScouter(S.parseScouterText(DARK_KNIGHT('SIR')), 'Dark Knight');
+        assert.deepEqual([stats.mainBase, stats.mainPct, stats.mainFlat], [6210, 402, 24310]);
+        assert.deepEqual([stats.subBase, stats.subPct, stats.subFlat], [3109, 161, 530]);
+    });
+    test('an unreadable label is placed by its row, never by borrowing another stat', () => {
+        const { stats } = S.statsFromScouter(S.parseScouterText(DARK_KNIGHT('~~')), 'Dark Knight');
+        assert.notEqual(stats.mainBase, 3109, 'the DEX row must not become STR');
+        const placed = S.statsFromScouter(S.parseScouterText(DARK_KNIGHT('Sl7R')), 'Dark Knight').stats;
+        assert.equal(placed.mainBase, 6210);
+        assert.equal(placed.subBase, 3109);
+    });
+});
+
+describe('a table cell read as letters', () => {
+    test('keeps the row with that cell empty and the misread noted', () => {
+        const p = S.parseScouterText('STR 5318 am 23290\nDEX 3109 161 530\nAttack 2834 37 0\n');
+        assert.equal(p.rows.str.base, 5318);
+        assert.equal(p.rows.str.pct, null);
+        assert.equal(p.rows.str.flat, 23290);
+        assert.equal(p.rows.str.junk[0].raw, 'am');
+        const { stats, missing } = S.statsFromScouter(p, 'Dark Knight');
+        assert.equal(stats.mainBase, 5318);
+        assert.ok(missing.includes('mainPct'));
+        assert.equal(stats.subBase, 3109);
     });
 });

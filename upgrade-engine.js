@@ -1220,9 +1220,9 @@
      * else the prime value (a second prime line, as with 2L crit damage).
      * Returns [{ label, lines }] in the export's line vocabulary.
      */
-    function potentialPresets(slot, itemLevel, className) {
+    function potentialPresets(slot, itemLevel, className, tier = 'legendary') {
         const tables = root.UpgradeEngine.TABLES;
-        const pool = tables && tables.cubePool(slot, itemLevel || 200);
+        const pool = tables && tables.cubePool(slot, itemLevel || 200, tier);
         if (!pool) return [];
         const cs = classStats(className);
         const best = (list, stat) => Math.max(0, ...list.filter(l => l.stat === stat).map(l => l.value));
@@ -1248,9 +1248,9 @@
             .filter(p => p.lines.every(l => l.stat === 'other' || l.value > 0));
     }
 
-    function lineValuesFor(slot, itemLevel, stat) {
+    function lineValuesFor(slot, itemLevel, stat, tier = 'legendary') {
         const tables = root.UpgradeEngine.TABLES;
-        const pool = tables && tables.cubePool(slot, itemLevel || 200);
+        const pool = tables && tables.cubePool(slot, itemLevel || 200, tier);
         const values = new Set();
         if (pool) [...pool.prime, ...pool.nonPrime].forEach(l => { if (l.stat === stat) values.add(l.value); });
         // Lower tiers roll smaller values; offer the unique/epic steps too.

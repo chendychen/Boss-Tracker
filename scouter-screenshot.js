@@ -55,6 +55,20 @@
         attack: 'att', mattack: 'matt', magicattack: 'matt' };
 
     /**
+     * A table row's label as a key, allowing for one misread character in the
+     * three-letter stats ("SIR" or "5TR" for STR). Null when it is none of them.
+     */
+    function rowKey(label) {
+        const raw = String(label || '').toLowerCase()
+            .replace(/5/g, 's').replace(/0/g, 'o').replace(/[1|]/g, 'i').replace(/3/g, 'e');
+        const key = letters(raw);
+        if (ROW_KEYS[key]) return ROW_KEYS[key];
+        if (key.length !== 3) return null;
+        const near = ['str', 'dex', 'int', 'luk'].filter(s => [...s].filter((c, i) => c !== key[i]).length <= 1);
+        return near.length === 1 ? near[0] : null;
+    }
+
+    /**
      * Pulls MapleScouter's fields out of recognised text. Each field is null
      * when its label was not found, so the review can point at what to type.
      */
@@ -62,27 +76,48 @@
         const t = String(text || '').replace(/[|]/g, ' ');
         const grab = re => { const m = t.match(re); return m ? num(m[1]) : null; };
 
+        // The table's rows, in order: main stat, secondary stat (two for a
+        // few classes), then Attack or M.Attack. Labels are matched loosely
+        // and the order is kept, so a misread label can still be placed.
         const rows = {};
-        const rowRe = /^\s*(DEX|STR|INT|LUK|Max\s*HP|HP|M\.?\s?Attack|Magic\s+Attack|Attack)\s+(\d[\d,]*)\s+(\d[\d,.]*)\s+(\d[\d,]*)(?!\S*\d)/gim;
+        const tableRows = [];
+        // A cell can come back as a few letters ("am" for 411); such a row is
+        // kept with that cell empty and the misread noted, so the browser can
+        // re-read just that cell.
+        const cell = String.raw`(\d[\d,.]*|[^\s\d]{1,4})`;
+        const rowRe = new RegExp(String.raw`^\s*([A-Za-z0-9|.]+(?:\s?[A-Za-z]+)?)\s+${cell}\s+${cell}\s+${cell}(?!\S*\d)`, 'gm');
         for (const m of t.matchAll(rowRe)) {
-            const key = ROW_KEYS[letters(m[1])];
-            if (key && !rows[key]) rows[key] = { base: num(m[2]), pct: num(m[3]), flat: num(m[4]) };
+            if (/^(level|general|range)/i.test(m[1]) || letters(m[1]).length < 2) continue;
+            const fields = ['base', 'pct', 'flat'];
+            const cells = [m[2], m[3], m[4]];
+            if (cells.filter(c => /^\d/.test(c)).length < 2) continue;
+            const row = { label: m[1], key: rowKey(m[1]), junk: [] };
+            cells.forEach((c, i) => {
+                row[fields[i]] = /^\d/.test(c) ? num(c) : null;
+                if (!/^\d/.test(c)) row.junk.push({ field: fields[i], raw: c });
+            });
+            tableRows.push(row);
+            if (row.key && !rows[row.key]) rows[row.key] = row;
         }
 
         const classLine = t.match(/Class\s+([^\n]+)/);
         let ied = grab(/Ignore\s+Enemy\s+Def\S*\s+(\d[\d.,]*)/i);
         // A dropped decimal point turns 98.94 into 9894.
         if (ied !== null && ied > 100 && ied < 10000) ied /= 100;
+        // Crit damage sits around 100-250%; 1282 is 128.2 with its point lost.
+        let critDmg = grab(/Critical\s+Damage\s+(\d[\d.,]*)/i);
+        if (critDmg !== null && critDmg > 400 && Number.isInteger(critDmg)) critDmg /= 10;
 
         return {
             level: grab(/Level\s+(\d{2,3})\b/),
             classRaw: classLine ? classLine[1].trim() : null,
             className: classLine ? matchClass(classLine[1]) : null,
             rows,
+            tableRows,
             damage: grab(/(?:^|\d\s+)Damage\s+(\d[\d.,]*)/m),
             boss: grab(/Boss\s+Damage\s+(\d[\d.,]*)/i),
             finalDamage: grab(/Final\s+Damage\s+(\d[\d.,]*)/i),
-            critDmg: grab(/Critical\s+Damage\s+(\d[\d.,]*)/i),
+            critDmg,
             critRate: grab(/Critical\s+Rate\s+(\d[\d.,]*)/i),
             ied,
             statusDmg: grab(/Additional\s+Status\s*D\S*\s+(\d[\d.,]*)/i),
@@ -103,11 +138,15 @@
         const engine = root.UpgradeEngine;
         const cls = className || parsed.className;
         const cs = engine && cls ? engine.classStats(cls) : null;
-        const statRows = ['dex', 'str', 'int', 'luk', 'hp'].filter(k => parsed.rows[k]);
-        const mainKey = cs && parsed.rows[cs.main] ? cs.main : statRows[0];
-        const subKey = cs && parsed.rows[cs.sub] ? cs.sub : statRows.find(k => k !== mainKey);
-        const main = parsed.rows[mainKey];
-        const sub = parsed.rows[subKey];
+        // A row is the class's main or secondary stat by its label, else by
+        // its place in the table (main first, then secondary) when its label
+        // was misread. A row read as some other stat is never borrowed, so a
+        // missing row shows as missing rather than as another stat's numbers.
+        const order = (parsed.tableRows || []).filter(r => !['att', 'matt'].includes(r.key));
+        const byPlace = i => (order[i] && !order[i].key ? order[i] : null);
+        const main = cs ? parsed.rows[cs.main] || byPlace(0) : order[0];
+        let sub = cs ? parsed.rows[cs.sub] || byPlace(1) : order[1];
+        if (sub === main) sub = null;
         const atk = (cs && cs.magic ? parsed.rows.matt || parsed.rows.att : parsed.rows.att || parsed.rows.matt);
 
         const stats = {};
@@ -327,6 +366,35 @@
     }
 
     /**
+     * Re-reads table cells that came back as letters, digits only, from the
+     * misread word's own box on the screenshot. Fills them in place.
+     */
+    async function rereadCells(Tesseract, img, words, parsed, onProgress) {
+        const gaps = (parsed.tableRows || []).filter(r => r.junk && r.junk.length);
+        if (!gaps.length) return;
+        onProgress('Re-reading unclear numbers');
+        const sameLine = (a, b) => Math.abs((a.y0 + a.y1) / 2 - (b.y0 + b.y1) / 2) < Math.max(a.y1 - a.y0, 6);
+        const digits = await Tesseract.createWorker('eng');
+        try {
+            await digits.setParameters({ tessedit_char_whitelist: '0123456789.,', tessedit_pageseg_mode: '7' });
+            for (const row of gaps) {
+                const first = row.label.split(/\s+/)[0];
+                for (const gap of row.junk) {
+                    const word = words.find(w => w.t === gap.raw && words.some(l => l.t === first && sameLine(l, w) && l.x1 < w.x0));
+                    if (!word) continue;
+                    const box = { x: Math.round(word.x0), y: Math.round(word.y0),
+                        w: Math.max(1, Math.round(word.x1 - word.x0)), h: Math.max(1, Math.round(word.y1 - word.y0)) };
+                    const { data } = await digits.recognize(digitsCanvas(img, box, 6));
+                    const value = num(data.text.replace(/[^\d.]/g, ''));
+                    if (value !== null) { row[gap.field] = value; gap.reread = data.text.trim(); }
+                }
+            }
+        } finally {
+            await digits.terminate();
+        }
+    }
+
+    /**
      * Recognises a screenshot. Resolves to { kind: 'enter', text, parsed } for
      * the Enter Directly page, or { kind: 'results', text, parsed } with
      * parsed = { hexaConverted, bd40, ied40 } for the results page.
@@ -345,7 +413,11 @@
         } finally {
             await worker.terminate();
         }
-        if (!isResultsPage(data.text)) return { kind: 'enter', text: data.text, parsed: parseScouterText(data.text) };
+        if (!isResultsPage(data.text)) {
+            const parsed = parseScouterText(data.text);
+            await rereadCells(Tesseract, img, wordsOf(data, scale), parsed, onProgress);
+            return { kind: 'enter', text: data.text, parsed };
+        }
 
         // A fresh reader for the bubbles: one that has just read the whole
         // page adapts to its fonts and misreads the tiny digits.

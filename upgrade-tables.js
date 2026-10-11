@@ -219,16 +219,46 @@
         eye: 'accessory',      // pocket items take no potential, so they have no pool
     };
 
-    // GMS items above level 150 roll one point higher on percentage lines.
+    // Percentage stat lines scale with the item's level band and tier. The
+    // pools above are written for level 71-150, prime lines at legendary and
+    // non-prime lines at unique. Main stat % by band (0-30, 31-70, 71-150,
+    // 151+), from maplestorywiki's Potential page:
     const LEVEL_BUMPED = new Set(['str%', 'dex%', 'int%', 'luk%', 'hp%', 'allstat%', 'att%', 'matt%', 'damage%']);
+    const TIER_MAIN = { legendary: [6, 9, 12, 13], unique: [3, 6, 9, 10], epic: [2, 4, 6, 7], rare: [1, 2, 3, 4] };
+    const TIER_ORDER = ['rare', 'epic', 'unique', 'legendary'];
+    const levelBand = L => (L <= 30 ? 0 : L <= 70 ? 1 : L <= 150 ? 2 : 3);
 
-    /** The pool for an item, with values adjusted to its level. */
-    function cubePool(slot, itemLevel) {
+    /**
+     * A percentage line's value moved from its tier at level 71-150 to
+     * another tier and band. From 71 up the steps add (all stat goes 9 -> 10
+     * above 150 as main stat goes 12 -> 13); below 71 they scale in
+     * proportion, which gives the 2% all stat a unique level-30 Lidium Heart
+     * rolls.
+     */
+    function scaleLine(line, from, to, band) {
+        if (!LEVEL_BUMPED.has(line.stat)) return line;
+        const base = TIER_MAIN[from][2];
+        const target = TIER_MAIN[to][band];
+        const value = band >= 2 ? line.value + target - base : Math.floor(line.value * target / base + 1e-9);
+        return { ...line, value: Math.max(1, value) };
+    }
+
+    /**
+     * The pool for an item, with values for its level and tier (legendary
+     * unless given). A lower-tier item's prime lines are drawn like a
+     * legendary item's non-prime ones, a tier down.
+     */
+    function cubePool(slot, itemLevel, tier = 'legendary') {
         const pool = CUBE_POOLS[SLOT_POOL[slot]];
         if (!pool) return null;
-        const bump = itemLevel > 150 ? 1 : 0;
-        const adj = arr => arr.map(l => (bump && LEVEL_BUMPED.has(l.stat) ? { ...l, value: l.value + bump } : l));
-        return { prime: adj(pool.prime), nonPrime: adj(pool.nonPrime) };
+        const band = levelBand(itemLevel || 0);
+        const t = Math.max(0, TIER_ORDER.indexOf(tier === 'none' || !tier ? 'legendary' : tier));
+        const primeTier = TIER_ORDER[t];
+        const lowerTier = TIER_ORDER[Math.max(0, t - 1)];
+        const prime = t === 3
+            ? pool.prime.map(l => scaleLine(l, 'legendary', primeTier, band))
+            : pool.nonPrime.map(l => scaleLine(l, 'unique', primeTier, band));
+        return { prime, nonPrime: pool.nonPrime.map(l => scaleLine(l, 'unique', lowerTier, band)) };
     }
 
     const CUBES = {

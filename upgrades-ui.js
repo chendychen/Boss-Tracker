@@ -351,7 +351,7 @@ function setUpgradeLine(slot, index, part, value) {
         const lines = (item.potLines || []).map(l => ({ ...l }));
         while (lines.length <= index) lines.push({ stat: 'other', value: 0 });
         if (part === 'stat') {
-            const values = UpgradeEngine.lineValuesFor(slot, item.level, value);
+            const values = UpgradeEngine.lineValuesFor(slot, item.level, value, item.potTier);
             lines[index] = { stat: value, value: values.length ? values[0] : lines[index].value };
         } else {
             lines[index].value = parseFloat(value) || 0;
@@ -366,8 +366,8 @@ function describePreset(preset) {
 }
 
 /** A "Fill lines" picker of typical line sets; onPick receives the preset's index. */
-function renderPresetPicker(slot, itemLevel, className, onPick) {
-    const presets = UpgradeEngine.potentialPresets(slot, itemLevel, className);
+function renderPresetPicker(slot, itemLevel, className, onPick, tier) {
+    const presets = UpgradeEngine.potentialPresets(slot, itemLevel, className, presetTier(tier));
     if (!presets.length) return '';
     return `
         <div class="upg-line">
@@ -379,14 +379,20 @@ function renderPresetPicker(slot, itemLevel, className, onPick) {
         </div>`;
 }
 
-/** Fills an item's lines with a typical set; a legendary set makes the item legendary. */
+/** The tier a preset fills at: the item's own, or legendary when it has none yet. */
+function presetTier(tier) {
+    return tier && tier !== 'none' ? tier : 'legendary';
+}
+
+/** Fills an item's lines with a typical set at the item's tier. */
 function applyPotentialPreset(slot, index) {
     const build = getActiveCharacter().upgradeBuild;
     editUpgradeItem(slot, item => {
-        const preset = UpgradeEngine.potentialPresets(slot, item.level, build.className)[+index];
+        const tier = presetTier(item.potTier);
+        const preset = UpgradeEngine.potentialPresets(slot, item.level, build.className, tier)[+index];
         if (!preset) return;
         item.potLines = preset.lines.slice(0, item.lineCount || 3).map(l => ({ ...l }));
-        item.potTier = 'legendary';
+        item.potTier = tier;
     });
 }
 
@@ -394,11 +400,12 @@ function applyRecordPreset(index) {
     if (!upgradeRecord) return;
     const build = getActiveCharacter().upgradeBuild;
     const item = build.items[upgradeRecord.slot];
-    const preset = UpgradeEngine.potentialPresets(item.slot || upgradeRecord.slot, item.level, build.className)[+index];
-    if (!preset) return;
     const draft = upgradeRecord.draft;
+    const tier = presetTier(draft.potTier);
+    const preset = UpgradeEngine.potentialPresets(item.slot || upgradeRecord.slot, item.level, build.className, tier)[+index];
+    if (!preset) return;
     draft.potLines = preset.lines.slice(0, draft.potLines.length || 3).map(l => ({ ...l }));
-    draft.potTier = 'legendary';
+    draft.potTier = tier;
     renderUpgradesContent();
 }
 
@@ -816,6 +823,27 @@ function updateScouterResultsPreview() {
     el.textContent = scouterResultsPreview(fitSkillIed(character, v('scouterRes_bd'), v('scouterRes_ied')), getCharSkillIed(character));
 }
 
+/**
+ * What two familiar lines are worth on this sheet, as a sanity check: on a
+ * complete endgame sheet 8% crit damage is about 30% main stat. A missing
+ * "% not applied" figure or stat %, or a misread crit damage, shows up here
+ * as a figure far from that.
+ */
+function renderStatSheetCheck(character, build) {
+    const E = UpgradeEngine;
+    const stats = upgradeStatsFor(character, build);
+    if (!E.damageIndex(stats)) return '';
+    const cls = getCharClass(character);
+    const unit = E.STAT_NAMES[E.classStats(cls).main];
+    const worth = E.lineEquivalent(stats, 'mainPct', cls, getCharLevel(character), characterUpgradeSettings(character).pdr);
+    const crit = worth({ stat: 'critDmg', value: 8 });
+    const boss = worth({ stat: 'boss', value: 40 });
+    const odd = crit < 22 || crit > 45;
+    return `<p class="upg-note ${odd ? 'upg-shot-error' : ''}">On this sheet 8% crit damage is worth ${crit.toFixed(1)}% ${unit}
+        and 40% boss ${boss.toFixed(1)}% ${unit}.${odd ? ` A complete endgame sheet puts 8% crit damage near 30%: check
+        ${unit} %, ${unit} (flat) and crit damage above.` : ''}</p>`;
+}
+
 function renderUpgradeStats(character, build) {
     const stats = UpgradeEngine.normalizeStats(build.stats);
     // Open by default only while there is no gear, when the sheet is the next step,
@@ -828,8 +856,8 @@ function renderUpgradeStats(character, build) {
         <details class="upg-card" ${statsOpen ? 'open' : ''}
                  ontoggle="onUpgradeDetailsToggle('stats', this.open, ${statsOpen})">
             <summary>Stat sheet</summary>
-            <p class="upg-note">Base stats with no buffs, as MapleScouter's Enter Directly page takes them.
-                Only ratios matter, so small errors shift every upgrade alike.</p>
+            <p class="upg-note">Base stats with no buffs, as MapleScouter's Enter Directly page takes them.</p>
+            ${renderStatSheetCheck(character, build)}
             ${renderScouterShot(character, build)}
             ${UpgradeEngine.analysisStats(build).weaponFd ? `<p class="upg-note">Your ${sanitizeInput(build.items.weapon.name || 'weapon')}'s
                 liberation skill adds ${UpgradeEngine.analysisStats(build).weaponFd}% final damage on top of the stat window,
@@ -1117,12 +1145,12 @@ function renderUpgradeItemEditor(character, build, slot, it) {
             </div></div>`;
     }
 
-    const lineRows = [renderPresetPicker(slot, it.level, build.className, `applyPotentialPreset.bind(null, '${slot}')`)];
+    const lineRows = [renderPresetPicker(slot, it.level, build.className, `applyPotentialPreset.bind(null, '${slot}')`, it.potTier)];
     for (let i = 0; i < lineCount; i++) {
         const line = (it.potLines || [])[i] || { stat: 'other', value: 0 };
         const choices = E.lineStatsForSlot(slot, build.className);
         if (!choices.includes(line.stat)) choices.unshift(line.stat);
-        const values = E.lineValuesFor(slot, it.level, line.stat);
+        const values = E.lineValuesFor(slot, it.level, line.stat, it.potTier);
         if (line.stat !== 'other' && !values.includes(line.value)) values.unshift(line.value);
         const worth = valued ? upgradeLinesWorth(stats, E.linesDelta([line], build.className, getCharLevel(character))) : 0;
         lineRows.push(`
@@ -1267,7 +1295,7 @@ function setRecordLine(index, part, value) {
     const item = character.upgradeBuild.items[upgradeRecord.slot];
     const line = upgradeRecord.draft.potLines[index];
     if (part === 'stat') {
-        const values = UpgradeEngine.lineValuesFor(item.slot, item.level, value);
+        const values = UpgradeEngine.lineValuesFor(item.slot, item.level, value, upgradeRecord.draft.potTier);
         upgradeRecord.draft.potLines[index] = { stat: value, value: values.length ? values[0] : line.value };
     } else {
         line.value = parseFloat(value) || 0;
@@ -1349,11 +1377,11 @@ function renderUpgradeRecorder(character, build) {
                     ${['rare', 'epic', 'unique', 'legendary'].map(t => `<option ${t === draft.potTier ? 'selected' : ''}>${t}</option>`).join('')}
                 </select>
             </div>
-            ${renderPresetPicker(slot, item.level, cls, 'applyRecordPreset')}
+            ${renderPresetPicker(slot, item.level, cls, 'applyRecordPreset', draft.potTier)}
             ${draft.potLines.map((line, i) => {
                 const choices = E.lineStatsForSlot(slot, cls);
                 if (!choices.includes(line.stat)) choices.unshift(line.stat);
-                const values = E.lineValuesFor(slot, item.level, line.stat);
+                const values = E.lineValuesFor(slot, item.level, line.stat, draft.potTier);
                 if (line.stat !== 'other' && !values.includes(line.value)) values.unshift(line.value);
                 return `
                 <div class="upg-line">
