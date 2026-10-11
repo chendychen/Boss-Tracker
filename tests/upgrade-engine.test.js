@@ -841,3 +841,25 @@ describe('moves players never make', () => {
         assert.ok(!opts.some(o => /AbsoLab|Arcane Umbra/.test(o.to)), opts.map(o => o.to).join('; '));
     });
 });
+
+describe('flames on a replacement', () => {
+    const cat = name => E.GEAR_CATALOG.find(g => g.name === name);
+    test('a pitched piece gets a flame as lucky as the Gollux one, which scores higher', () => {
+        const gollux = { ...E.newItem('belt', cat('Superior Engraved Gollux Belt')), flames: { str: 16, allStatPercent: 2 } };
+        const dreamy = E.newItem('belt', cat('Dreamy Belt'));
+        const flames = E.equivalentFlames(gollux, dreamy, 'Hero');
+        assert.ok(E.flameScore(flames, 'Hero') > E.flameScore(gollux.flames, 'Hero') * 2,
+            `${E.flameScore(gollux.flames, 'Hero')} -> ${E.flameScore(flames, 'Hero')}`);
+    });
+    test('a better old flame maps to a better new one', () => {
+        const from = f => ({ ...E.newItem('earring', cat('Superior Gollux Earring')), flames: f });
+        const cfe = E.newItem('earring', cat('Commanding Force Earring'));
+        const lo = E.flameScore(E.equivalentFlames(from({ str: 8 }), cfe, 'Hero'), 'Hero');
+        const hi = E.flameScore(E.equivalentFlames(from({ str: 40, allStatPercent: 4 }), cfe, 'Hero'), 'Hero');
+        assert.ok(hi > lo, `${lo} vs ${hi}`);
+    });
+    test('slots that take no flame get none', () => {
+        const ring = E.newItem('ring1', cat('Endless Terror'));
+        assert.deepEqual({ ...E.equivalentFlames(E.newItem('ring1', cat('Superior Gollux Ring')), ring, 'Hero') }, {});
+    });
+});

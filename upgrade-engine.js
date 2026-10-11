@@ -857,15 +857,24 @@
         return r;
     }
 
+    // Flame outcome vectors: the stat fields a flame moves, in this order.
+    const FLAME_FIELDS = ['mainBase', 'subBase', 'att', 'mainPct', 'subPct', 'boss', 'dmg'];
+    const flameDistCache = new Map();
+
     /**
-     * Distribution of flame outcomes as FD relative to the current flame.
-     * Lines are distinct types drawn from the pool; only types that matter to
-     * the class are enumerated, the rest are counted combinatorially.
+     * Every flame one reset can give an item, as [{ v, p, score }] with v in
+     * FLAME_FIELDS order. Lines are distinct types drawn from the pool; only
+     * types that matter to the class are enumerated, the rest are counted
+     * combinatorially. Depends only on the item's kind, so it is cached.
      */
-    function flameOutcomes(item, ctx) {
+    function flameDistribution(item, className) {
+        const cs = classStats(className);
+        const baseAtt = (item.baseStats && (cs.magic ? item.baseStats.matt : item.baseStats.att)) || 0;
+        const key = [item.slot === 'weapon', item.level, ctxAdvantaged(item), baseAtt, className].join('|');
+        if (flameDistCache.has(key)) return flameDistCache.get(key);
         const tables = T();
         const advantaged = ctxAdvantaged(item);
-        const types = flameLineTypes(item, ctx.className);
+        const types = flameLineTypes(item, className);
         const N = item.slot === 'weapon' ? tables.FLAME_POOL_WEAPON : tables.FLAME_POOL_ARMOR;
         const tiers = advantaged ? tables.FLAME_TIERS_ADVANTAGED : tables.FLAME_TIERS_NORMAL;
         const lineCounts = advantaged ? [[4, 1]] : tables.FLAME_LINES_NORMAL;
@@ -873,7 +882,7 @@
 
         // Each line type's delta per tier as a fixed-width vector, so the
         // enumeration adds numbers instead of building objects.
-        const FIELDS = ['mainBase', 'subBase', 'att', 'mainPct', 'subPct', 'boss', 'dmg'];
+        const FIELDS = FLAME_FIELDS;
         const vec = d => FIELDS.map(f => d[f] || 0);
         const perTier = types.map(t => tiers.map(([tier, pt]) => ({ v: vec(t.per(tier)), p: pt })));
 
@@ -906,21 +915,65 @@
         };
         subsets(0);
 
-        const current = flameDelta(item.flames, ctx.className);
-        const base = applyDelta(ctx.stats, negateDelta(current));
-        const before = damageIndex(ctx.stats, ctx.pdr);
-        const hpMain = classStats(ctx.className).main === 'hp';
-        const out = [];
-        for (const { v, p } of dist.values()) {
-            const delta = {};
-            FIELDS.forEach((f, k) => { if (v[k]) delta[f] = v[k]; });
+        const hpMain = cs.main === 'hp';
+        const out = [...dist.values()].map(({ v, p }) => {
             // The same score flameScore() gives a finished flame, from the vector.
             const [mainBase, subBase, att, mainPct, , boss, dmg] = v;
             const score = (hpMain ? mainBase / 17.5 : mainBase) + subBase / 12 + 3 * att
                 + 10 * mainPct + 10 * (boss + dmg);
-            out.push({ fd: (damageIndex(applyDelta(base, delta), ctx.pdr) / before - 1) * 100, p, lines: [], score });
-        }
+            return { v, p, score };
+        });
+        flameDistCache.set(key, out);
+        return out;
+    }
+
+    /** Distribution of flame outcomes as FD relative to the current flame. */
+    function flameOutcomes(item, ctx) {
+        const current = flameDelta(item.flames, ctx.className);
+        const base = applyDelta(ctx.stats, negateDelta(current));
+        const before = damageIndex(ctx.stats, ctx.pdr);
+        const out = flameDistribution(item, ctx.className).map(({ v, p, score }) => {
+            const delta = {};
+            FLAME_FIELDS.forEach((f, k) => { if (v[k]) delta[f] = v[k]; });
+            return { fd: (damageIndex(applyDelta(base, delta), ctx.pdr) / before - 1) * 100, p, lines: [], score };
+        });
         return out.sort((a, b) => b.fd - a.fd);
+    }
+
+    /**
+     * A flame for `to` as lucky as `from`'s: the flame at the same place in
+     * to's own reset odds as from's flame score sits in from's. A pitched
+     * item always rolls 4 lines at tiers 4-7 where Gollux rolls fewer and
+     * lower, so copying the old flame across would undersell the pitched one.
+     */
+    function equivalentFlames(from, to, className) {
+        if (!T().FLAMEABLE_SLOTS.has(to.slot)) return {};
+        const now = flameScore(from && from.flames, className);
+        const src = flameDistribution({ ...from, slot: to.slot }, className);
+        let below = 0, equal = 0;
+        for (const o of src) {
+            if (o.score < now - 1e-9) below += o.p;
+            else if (Math.abs(o.score - now) <= 1e-9) equal += o.p;
+        }
+        const total = src.reduce((a, o) => a + o.p, 0) || 1;
+        const q = Math.min(1, (below + equal / 2) / total);
+        const dst = flameDistribution(to, className).slice().sort((a, b) => a.score - b.score);
+        const dstTotal = dst.reduce((a, o) => a + o.p, 0) || 1;
+        let cum = 0, pick = dst[dst.length - 1];
+        for (const o of dst) {
+            cum += o.p / dstTotal;
+            if (cum >= q - 1e-9) { pick = o; break; }
+        }
+        const cs = classStats(className);
+        const [mainBase, subBase, att, mainPct, subPct, boss, dmg] = pick.v;
+        const flames = {};
+        if (cs.main === 'hp') flames.hp = mainBase; else if (mainBase) flames[cs.main] = mainBase;
+        if (subBase) flames[cs.sub] = subBase;
+        if (att) flames[cs.magic ? 'matt' : 'att'] = att;
+        if (mainPct || subPct) flames.allStatPercent = mainPct || subPct;
+        if (boss) flames.bossDamagePercent = boss;
+        if (dmg) flames.damagePercent = dmg;
+        return flames;
     }
 
     function flameOptions(item, ctx) {
@@ -1504,8 +1557,9 @@
     /**
      * Item swaps worth making, best final damage first. The new item is
      * starred to the target (the plan's star force target, or its own fixed
-     * stars) and keeps the old item's potential and flames, so the comparison
-     * is the item itself and its set bonuses. Cost is the mesos to star it.
+     * stars), keeps the old item's potential and gets a flame as lucky as the
+     * old one's on its own odds, so the comparison is the item itself, its
+     * flame potential and its set bonuses. Cost is the mesos to star it.
      */
     function swapOptions(build, settings = {}, { charLevel = 280 } = {}) {
         const s = { ...DEFAULT_SETTINGS, ...settings };
@@ -1523,12 +1577,15 @@
             next.potTier = current.potTier;
             next.potLines = (current.potLines || []).map(l => ({ ...l }));
             next.lineCount = current.lineCount || 3;
-            next.flames = tables.FLAMEABLE_SLOTS.has(slot) ? { ...(current.flames || {}) } : {};
+            next.flames = equivalentFlames(current, next, build.className);
             return next;
         };
         const starCost = next => (next.sfKind === 'ordinary' && next.stars
             ? sfSteps({ ...next, stars: 0 }, next.stars, s)(0, next.stars).cost : 0);
         const swappable = (slot, current) => current && !current.locked && slot !== 'weapon' && baseKnown(current);
+        // Flame scores before and after, for showing the flame a swap assumes.
+        const flameChange = (slot, from, to) => (tables.FLAMEABLE_SLOTS.has(slot)
+            ? { from: flameScore(from && from.flames, build.className), to: flameScore(to.flames, build.className) } : null);
         // Moves players never make: CRA goes straight to Eternal, not through
         // AbsoLab or Arcane Umbra.
         const SKIPPED_MOVES = { CRA: new Set(['AbsoLab', 'Arcane Umbra']) };
@@ -1574,6 +1631,7 @@
                 out.push({
                     type: 'swap', slots: [slot], from: current.name, to: entry.name, stars: next.stars,
                     fdGain: gain, cost: starCost(next), via: VIA[entry.set] || 'drop',
+                    flame: flameChange(slot, current, next),
                     sets: describeSetChange(items, slot, next), breakEven: breakEven({ [slot]: next }),
                 });
             }
@@ -1640,6 +1698,7 @@
                 mult *= 1 + gain / 100;
                 steps.push({
                     slot: sl, from: cur[sl] && cur[sl].name, to: next.name, gain, breakEven: be,
+                    flame: flameChange(sl, items[sl], next),
                     sets: describeSetChange(cur, sl, next), cumulative: (mult - 1) * 100,
                     why: gain >= 0 ? '' : luckyLost
                         ? `${old} falls below 3 pieces, so the lucky weapon stops counting toward it and its bonuses drop by two thresholds at once`
@@ -1822,7 +1881,7 @@
         KOREAN_CLASS, importBuild, normalizeItem, solveLinear, climbExpectation,
         collapsePool, cubeOutcomes, cubeThresholds,
         sfStep, sfSteps, sfDelta, flameOutcomes, recommend, buildPlan,
-        flameScore, weaponFlameAttTiers, itemContribution, restatItem, lineStatsForSlot, lineValuesFor, potentialPresets, LINE_LABELS,
+        flameScore, weaponFlameAttTiers, equivalentFlames, itemContribution, restatItem, lineStatsForSlot, lineValuesFor, potentialPresets, LINE_LABELS,
         describeClass, STAT_NAMES, describeLines, weighIed, lineSetScorer, solveSkillIed, classSkillIedBreakdown, CDR_CURVES, cdrCurveAt, gearCdr, analysisStats, targetUnit, lineEquivalent, scoreThresholds, equivalenceLegend,
         GEAR_CATALOG, STANDARD_SLOTS, newItem,
         itemSet, setCounts, setDelta, baseDelta, baseKnown, itemFull, swapDelta, swapDeltaMany, describeSetChange, swapOptions,

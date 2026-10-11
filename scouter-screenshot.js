@@ -81,20 +81,21 @@
         // and the order is kept, so a misread label can still be placed.
         const rows = {};
         const tableRows = [];
-        // A cell can come back as a few letters ("am" for 411); such a row is
-        // kept with that cell empty and the misread noted, so the browser can
-        // re-read just that cell.
-        const cell = String.raw`(\d[\d,.]*|[^\s\d]{1,4})`;
+        // A cell can come back garbled ("am" for 411, "a7" for 417); such a
+        // row is kept with that cell empty and the misread noted, so the
+        // browser can re-read just that cell.
+        const cell = String.raw`(\d[\d,.]*|\S{1,5})`;
+        const isNumber = c => /^\d[\d,.]*$/.test(c);
         const rowRe = new RegExp(String.raw`^\s*([A-Za-z0-9|.]+(?:\s?[A-Za-z]+)?)\s+${cell}\s+${cell}\s+${cell}(?!\S*\d)`, 'gm');
         for (const m of t.matchAll(rowRe)) {
             if (/^(level|general|range)/i.test(m[1]) || letters(m[1]).length < 2) continue;
             const fields = ['base', 'pct', 'flat'];
             const cells = [m[2], m[3], m[4]];
-            if (cells.filter(c => /^\d/.test(c)).length < 2) continue;
+            if (cells.filter(isNumber).length < 2) continue;
             const row = { label: m[1], key: rowKey(m[1]), junk: [] };
             cells.forEach((c, i) => {
-                row[fields[i]] = /^\d/.test(c) ? num(c) : null;
-                if (!/^\d/.test(c)) row.junk.push({ field: fields[i], raw: c });
+                row[fields[i]] = isNumber(c) ? num(c) : null;
+                if (!isNumber(c)) row.junk.push({ field: fields[i], raw: c });
             });
             tableRows.push(row);
             if (row.key && !rows[row.key]) rows[row.key] = row;

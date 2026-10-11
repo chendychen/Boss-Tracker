@@ -414,21 +414,45 @@ function applyRecordPreset(index) {
  * tier, since its value depends on the weapon's type and level; a value that
  * matches no tier is kept as "other".
  */
-function flameInput(item, className, key, value, onchange) {
+function flameInput(item, className, key, value, onchange, group) {
     const cs = UpgradeEngine.classStats(className);
     const attKey = cs.magic ? 'matt' : 'att';
     const tiers = item.slot === 'weapon' && key === attKey ? UpgradeEngine.weaponFlameAttTiers(item, className) : [];
     const v = +value || 0;
+    const tab = group ? `id="${group}-${key}" data-tab-group="${group}"` : '';
     if (!tiers.length) {
-        return `<input class="upg-num upg-wide" type="number" value="${v || ''}" onchange="${onchange}">`;
+        return `<input class="upg-num upg-wide" type="number" value="${v || ''}" ${tab} onchange="${onchange}">`;
     }
     const matched = !v || tiers.some(t => t.value === v);
-    return `<select onchange="${onchange}">
+    return `<select ${tab} onchange="${onchange}">
             <option value="0" ${!v ? 'selected' : ''}>none</option>
             ${tiers.map(t => `<option value="${t.value}" ${t.value === v ? 'selected' : ''}>Tier ${t.tier} · ${t.value}</option>`).join('')}
             ${matched ? '' : `<option value="${v}" selected>${v} (no tier match)</option>`}
         </select>`;
 }
+
+/**
+ * Tab and Shift+Tab through a group of fields (flames, the stat sheet).
+ * Changing a field re-renders the tab, which throws away the field focus
+ * was moving to, so the next field is found by id once the render is done.
+ */
+document.addEventListener('keydown', event => {
+    if (event.key !== 'Tab') return;
+    const group = event.target && event.target.dataset && event.target.dataset.tabGroup;
+    if (!group) return;
+    const fields = [...document.querySelectorAll(`[data-tab-group="${group}"]`)];
+    const next = fields[fields.indexOf(event.target) + (event.shiftKey ? -1 : 1)];
+    if (!next || !next.id) return;
+    const id = next.id;
+    // After the change event's re-render, which runs as focus leaves the field.
+    setTimeout(() => {
+        const target = document.getElementById(id);
+        if (target && document.activeElement !== target) {
+            target.focus();
+            if (target.select) target.select();
+        }
+    }, 0);
+}, true);
 
 function setUpgradeFlame(slot, key, value) {
     editUpgradeItem(slot, item => {
@@ -895,7 +919,7 @@ function renderUpgradeStats(character, build) {
                 ${upgradeStatFields(build.className).map(([k, label]) => `
                     <div class="prog-field">
                         <label>${label}</label>
-                        <input type="number" step="any" value="${stats[k] || ''}"
+                        <input type="number" step="any" value="${stats[k] || ''}" id="stat-${k}" data-tab-group="stat"
                                onchange="setUpgradeStat('${k}', this.value)">
                     </div>`).join('')}
             </div>
@@ -1238,7 +1262,7 @@ function renderUpgradeItemEditor(character, build, slot, it) {
                         <div class="upg-line">
                             <span class="upg-sub upg-flame-label">${label}</span>
                             ${flameInput({ ...it, slot }, build.className, k, it.flames && it.flames[k],
-                                `setUpgradeFlame('${slot}', '${k}', this.value)`)}
+                                `setUpgradeFlame('${slot}', '${k}', this.value)`, `flame-${slot}`)}
                         </div>`).join('') : '<p class="upg-sub">This slot cannot be flamed.</p>'}
                     ${slot === 'weapon' && !E.weaponFlameAttTiers({ ...it, slot }, build.className).length
                         ? `<p class="upg-sub">Enter the weapon's base ${cs.magic ? 'MATT' : 'ATT'} above to pick its flame by tier.</p>` : ''}
@@ -1408,7 +1432,7 @@ function renderUpgradeRecorder(character, build) {
         body = fields.map(([k, label]) => `
             <div class="upg-line">
                 <span class="upg-sub upg-flame-label">${label}</span>
-                ${flameInput({ ...item, slot }, cls, k, draft.flames[k], `setRecordFlame('${k}', this.value)`)}
+                ${flameInput({ ...item, slot }, cls, k, draft.flames[k], `setRecordFlame('${k}', this.value)`, 'rec-flame')}
             </div>`).join('');
     }
 
@@ -1459,6 +1483,7 @@ function renderSwapSteps(o) {
                         <strong>${sanitizeInput(st.slot)}</strong>: ${sanitizeInput(st.from || '')} → ${sanitizeInput(st.to)}
                         <span class="${st.gain >= 0 ? 'upg-gain' : 'upg-loss'}">${st.gain >= 0 ? '+' : ''}${st.gain.toFixed(2)}% at ${o.stars}★</span>
                         · ${st.breakEven === null ? 'never breaks even on its own' : `break-even ${st.breakEven}★`}
+                        ${st.flame ? `· flame ${st.flame.from} → ${st.flame.to}` : ''}
                         · <span class="upg-sub">${sanitizeInput(st.sets)} · running ${st.cumulative >= 0 ? '+' : ''}${st.cumulative.toFixed(2)}%</span>
                         ${st.why ? `<div class="upg-sub">Loses alone: ${sanitizeInput(st.why)}. Only worth doing with the next piece.</div>` : ''}
                     </li>`).join('')}
@@ -1481,9 +1506,10 @@ function renderUpgradeSwaps(character, build) {
             </div></div>
             <p class="upg-note">Replacing an item, priced with its own stats and the change in set bonuses across your
                 gear. Break-even is the lowest star force at which the new items stop being a loss; below it, keep what you
-                wear. The new item is starred to your star force target and keeps the current potential and flames, so the
-                gain is the item itself. A Genesis or Destiny weapon counts toward any other set where you wear 3 pieces,
-                which is why a single piece of a new set can be a loss and the whole set a gain.</p>
+                wear. The new item is starred to your star force target and keeps the current potential. Its flame is taken
+                as lucky as your current one, on the new item's own flame odds ("flame 21 → 79"), so boss pieces' stronger
+                flames count. A Genesis or Destiny weapon counts toward any other set where you wear 3 pieces, which is why a
+                single piece of a new set can be a loss and the whole set a gain.</p>
             ${swaps.length ? `
             <div class="prog-table-wrap">
                 <table class="prog-table upg-table">
@@ -1493,7 +1519,8 @@ function renderUpgradeSwaps(character, build) {
                     ${swaps.slice(0, 15).map(o => `
                         <tr class="${o.steps ? 'upg-swap-whole' : ''}">
                             <td>${o.whole ? '<span class="upg-type upg-type-cube">Whole set</span> ' : ''}${sanitizeInput(o.from)}
-                                <span class="upg-sub">→ ${sanitizeInput(o.to)} ${o.stars ? `${o.stars}★` : ''}</span></td>
+                                <span class="upg-sub">→ ${sanitizeInput(o.to)} ${o.stars ? `${o.stars}★` : ''}${o.flame
+                                    ? ` · flame ${o.flame.from} → ${o.flame.to}` : ''}</span></td>
                             <td class="upg-sub">${sanitizeInput(o.sets)}</td>
                             <td>${o.breakEven ? `<strong>${o.breakEven.stars}★</strong>
                                 <span class="upg-sub">${o.breakEven.cost ? fmtMeso(o.breakEven.cost) : 'no star force needed'}</span>

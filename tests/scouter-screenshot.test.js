@@ -229,3 +229,13 @@ describe('a table cell read as letters', () => {
         assert.equal(stats.subBase, 3109);
     });
 });
+
+describe('a cell garbled into letters and digits', () => {
+    test('"a7" for 417 keeps the row for a re-read', () => {
+        const p = S.parseScouterText('STR 5720 a7 23290\nDEX 3405 146 530\nAttack 3066 37 0\nFinal Damage 321.69 Boss Damage 420\n');
+        assert.equal(p.rows.str.base, 5720);
+        assert.equal(p.rows.str.pct, null);
+        assert.equal(p.rows.str.junk[0].raw, 'a7');
+        assert.equal(p.tableRows.length, 3, 'only the three table rows');
+    });
+});
