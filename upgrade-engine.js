@@ -1335,6 +1335,8 @@
         G('heart', 'Fairy Heart', 100, 'None', 0, [0, 0, 100], { starCap: 8 }),
         G('badge', 'Crystal Ventus Badge', 130, 'Boss Accessory', 0, [10, 5, 0]),
         G('medal', 'Immortal Legacy', 250, 'Brilliant Boss', 0, [10, 10, 500, { boss: 10 }], { sfKind: 'special' }),
+        // Given monthly to MVP Black rankers; lasts to the end of that month.
+        G('medal', 'The Black (MVP medal)', 1, 'None', 0, [7, 7, 350, { boss: 5 }], { sfKind: 'special' }),
         G('medal', 'Medal', 1, 'None', 0),
     ];
     const STANDARD_SLOTS = ['weapon', 'secondary', 'emblem', 'hat', 'top', 'bottom', 'shoes', 'gloves',
