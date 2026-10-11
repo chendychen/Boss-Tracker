@@ -714,3 +714,44 @@ describe('abnormal status damage', () => {
         assert.ok(E.fdGain({ ...SHEET, statusDmg: 22 }, { boss: 40 }) < E.fdGain(SHEET, { boss: 40 }));
     });
 });
+
+describe('Vicious Shot', () => {
+    test('crit rate past 100% counts as crit damage for archers that have it', () => {
+        const archer = { ...SHEET, critOverflow: true };
+        // 3% crit rate is worth about 0.66% crit damage
+        near(E.fdGain({ ...archer, critRate: 150 }, { critRate: 3 }), E.fdGain({ ...archer, critRate: 150 }, { critDmg: 0.66 }), 1e-9);
+        assert.equal(E.fdGain({ ...archer, critRate: 90 }, { critRate: 5 }), 0);     // still under the cap
+        assert.equal(E.fdGain({ ...SHEET, critRate: 150 }, { critRate: 3 }), 0);     // no Vicious Shot
+    });
+
+    test('follows the class, and crit rate lines count', () => {
+        assert.ok(E.usesViciousShot('Bowmaster') && E.usesViciousShot('Kain'));
+        assert.ok(!E.usesViciousShot('Corsair'));
+        assert.equal(E.analysisStats({ className: 'Pathfinder', stats: SHEET, items: {} }).critOverflow, true);
+        assert.equal(E.linesDelta(['Critical Rate: +12%'], 'Bowmaster').critRate, 12);
+    });
+});
+
+describe('potential presets', () => {
+    const names = (slot, level, cls) => E.potentialPresets(slot, level, cls).map(p => p.label);
+    const lines = (slot, level, cls, label) => [...E.potentialPresets(slot, level, cls).find(p => p.label.startsWith(label)).lines]
+        .map(l => `${l.stat} ${l.value}`);
+
+    test('armour takes a prime line then non-prime lines', () => {
+        assert.deepEqual(lines('hat', 250, 'Bowmaster', '3L stat'), ['dex% 13', 'dex% 10', 'dex% 10']);
+        assert.deepEqual(lines('top', 250, 'Bowmaster', 'Fake 3L'), ['dex% 13', 'dex% 10', 'allstat% 7']);
+        assert.deepEqual(lines('pendant1', 150, 'Bowmaster', '2L stat'), ['dex% 12', 'dex% 9', 'other 0']);
+    });
+
+    test('weapons get ATT sets, mages MATT, and Demon Avenger no fake 3L', () => {
+        assert.deepEqual(lines('weapon', 200, 'Bowmaster', 'ATT / ATT / Boss'), ['att% 13', 'att% 10', 'boss% 30']);
+        assert.deepEqual(lines('emblem', 200, 'Ice/Lightning', '3L ATT'), ['matt% 13', 'matt% 10', 'matt% 10']);
+        assert.ok(!names('emblem', 200, 'Bowmaster').some(n => /Boss/.test(n)));
+        assert.ok(!names('top', 250, 'Demon Avenger').some(n => /Fake/.test(n)));
+    });
+
+    test('gloves and hats get their own sets', () => {
+        assert.deepEqual(lines('gloves', 250, 'Bowmaster', '2L crit'), ['crit_dmg% 8', 'crit_dmg% 8', 'dex% 10']);
+        assert.deepEqual(lines('hat', 250, 'Pathfinder', '2s cooldown'), ['cdr 2', 'dex% 10', 'dex% 10']);
+    });
+});

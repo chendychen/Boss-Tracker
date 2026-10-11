@@ -63,6 +63,9 @@
             // carry a debuff, so it joins damage and boss damage in one pool.
             statusDmg: n(s.statusDmg),
             critDmg: n(s.critDmg), ied: n(s.ied), fd: n(s.fd),
+            // Critical rate only matters past 100% for classes with Vicious
+            // Shot (critOverflow), which turns the excess into crit damage.
+            critRate: n(s.critRate), critOverflow: !!s.critOverflow,
             // Final damage from a liberated Genesis or Destiny weapon's skill.
             // The stat window leaves it out, and it multiplies the other final
             // damage rather than adding to it, so it is kept apart from fd.
@@ -112,7 +115,8 @@
         const statValue = s.model === 'hp' ? 0.8 * main / 3.5 + sub : 4 * main + sub;
         const attack = s.att * (1 + s.attPct / 100);
         const dmgMult = 1 + (s.dmg + s.boss + s.statusDmg) / 100;
-        const critMult = 1.35 + s.critDmg / 100;
+        const viciousCd = s.critOverflow ? Math.max(0, s.critRate - 100) * VICIOUS_CD_PER_RATE : 0;
+        const critMult = 1.35 + (s.critDmg + viciousCd) / 100;
         const defMult = Math.max(0, 1 - (pdr / 100) * (1 - s.ied / 100) * (1 - s.skillIed / 100));
         const fdMult = (1 + s.fd / 100) * (1 + s.weaponFd / 100);
         const cdrMult = s.cdrCurve ? 1 : 1 + (s.cdr * s.cdrValue) / 100;
@@ -139,7 +143,7 @@
                     remaining = line > 0 ? remaining * f : remaining / f;
                 }
                 out.ied = 100 * (1 - remaining);
-            } else if (v && k in out && !['model', 'cdrValue', 'cdrCurve', 'skillIed'].includes(k)) {
+            } else if (v && k in out && !['model', 'cdrValue', 'cdrCurve', 'skillIed', 'critOverflow'].includes(k)) {
                 out[k] += v;
             }
         }
@@ -218,6 +222,15 @@
     const CDR_CURVES = {
         Pathfinder: [0, 20, 21, 47, 75, 76, 78, 80],
     };
+
+    // Vicious Shot, shared by these archers, lets critical rate pass 100%
+    // and turns a share of it into critical damage during the buff. The
+    // community rule of thumb (3% crit rate ~ 0.66% crit damage) folds its
+    // level and uptime into one rate per point of crit rate over 100%.
+    const VICIOUS_SHOT_CLASSES = new Set(['Bowmaster', 'Marksman', 'Pathfinder', 'Wind Archer',
+        'Mercedes', 'Wild Hunter', 'Kain']);
+    const VICIOUS_CD_PER_RATE = 0.66 / 3;
+    const usesViciousShot = className => VICIOUS_SHOT_CLASSES.has(className);
 
     function classStats(className) {
         return CLASS_STATS[className] || { main: 'str', sub: 'dex', magic: false, also: [] };
@@ -319,6 +332,7 @@
                 case 'boss': add('boss', l.value); break;
                 case 'dmg': add('dmg', l.value); break;
                 case 'critDmg': add('critDmg', l.value); break;
+                case 'critRate': add('critRate', l.value); break;
                 case 'cooldown': add('cdr', l.value); break;
                 case 'ied': d.ied = [...asList(d.ied), l.value]; break;
                 default: break;
@@ -418,7 +432,7 @@
         const merged = new Map();
         for (const entry of pool || []) {
             const line = parsePotentialLine(entry, className);
-            const useful = !['other', 'critRate'].includes(line.stat);
+            const useful = line.stat !== 'other';
             const key = useful ? `${line.stat}:${line.value}` : 'other';
             const prev = merged.get(key);
             if (prev) prev.w += entry.w;
@@ -951,6 +965,7 @@
             // Demon Avenger's damage comes from HP whichever source filled the
             // sheet; only Upgrade Tracker exports say so themselves.
             model: classStats(build.className).main === 'hp' ? 'hp' : build.stats && build.stats.model,
+            critOverflow: usesViciousShot(build.className),
             cdr: gearCdr(build.items, build.className),
             cdrValue: +s.cdrValue,
             cdrCurve: s.cdrCurve || null,
@@ -1183,6 +1198,41 @@
     }
 
     /** Values a line can take on this slot and item level, best first. */
+    /**
+     * Common legendary line sets for a slot, the way players name them
+     * ("3L stat", "fake 3L", "ATT / ATT / Boss"). The first line takes the
+     * prime value; later lines the non-prime value where the slot has one,
+     * else the prime value (a second prime line, as with 2L crit damage).
+     * Returns [{ label, lines }] in the export's line vocabulary.
+     */
+    function potentialPresets(slot, itemLevel, className) {
+        const tables = root.UpgradeEngine.TABLES;
+        const pool = tables && tables.cubePool(slot, itemLevel || 200);
+        if (!pool) return [];
+        const cs = classStats(className);
+        const best = (list, stat) => Math.max(0, ...list.filter(l => l.stat === stat).map(l => l.value));
+        const line = (stat, i) => (stat === 'other' ? { stat: 'other', value: 0 }
+            : { stat, value: (i > 0 && best(pool.nonPrime, stat)) || best(pool.prime, stat) });
+        const main = `${cs.main}%`;
+        const att = cs.magic ? 'matt%' : 'att%';
+        const wse = ['weapon', 'secondary', 'emblem'].includes(slot);
+        const sets = wse ? [
+            ['3L ATT', [att, att, att]],
+            ...(slot !== 'emblem' ? [['ATT / ATT / Boss', [att, att, 'boss%']]] : []),
+            ['2L ATT', [att, att, 'other']],
+        ] : [
+            ['3L stat', [main, main, main]],
+            // All stat carries no HP, so Demon Avenger has no fake 3L.
+            ...(cs.main !== 'hp' ? [['Fake 3L (2L stat + all stat)', [main, main, 'allstat%']]] : []),
+            ['2L stat', [main, main, 'other']],
+            ...(slot === 'gloves' ? [['2L crit damage + stat', ['crit_dmg%', 'crit_dmg%', main]]] : []),
+            ...(slot === 'hat' ? [['2s cooldown + 2L stat', ['cdr', main, main]]] : []),
+        ];
+        return sets
+            .map(([label, stats]) => ({ label, lines: stats.map(line) }))
+            .filter(p => p.lines.every(l => l.stat === 'other' || l.value > 0));
+    }
+
     function lineValuesFor(slot, itemLevel, stat) {
         const tables = root.UpgradeEngine.TABLES;
         const pool = tables && tables.cubePool(slot, itemLevel || 200);
@@ -1218,6 +1268,10 @@
         G('weapon', 'Arcane Umbra Weapon', 200, 'Arcane Umbra', 1e9),
         G('weapon', 'AbsoLab Weapon', 160, 'AbsoLab', 3e8),
         G('secondary', 'Secondary', 140, 'None', 5e8),
+        // Astra: class-specific base stats, so they are left unknown (out of
+        // swap pricing). 30 stars at its final growth stage; a boom is
+        // replaced by a 1B spare from the cat NPC.
+        G('secondary', 'Astra Secondary', 200, 'None', 1e9, null, { starCap: 30 }),
         G('emblem', "Mitra's Rage", 200, 'Pitched Boss', 0, [0, 0, 0]),
         G('emblem', 'Gold Maple Leaf Emblem', 100, 'None', 0),
         G('hat', 'Eternal Hat', 250, 'Eternal', 2e9, [80, 0, 0]),
@@ -1252,6 +1306,7 @@
         G('eye', 'Starving Blood-Red Wraith', 250, 'Brilliant Boss', 8e9, [20, 5, 0]),
         G('eye', 'Magic Eyepatch', 160, 'Pitched Boss', 8e9, [30, 7, 500]),
         G('eye', 'Papulatus Mark', 145, 'Boss Accessory', 5e8, [8, 1, 0]),
+        G('eye', 'Black Bean Mark', 135, 'Boss Accessory', 5e8, [7, 1, 0]),
         G('earring', 'Commanding Force Earring', 200, 'Pitched Boss', 8e9, [15, 5, 500]),
         G('earring', 'Estella Earrings', 160, 'Dawn Boss', 5e9),
         G('earring', 'Superior Gollux Earring', 150, 'Superior Gollux', 5e8, [15, 10, 300]),
@@ -1648,7 +1703,7 @@
                     subBase: s.subStatBase, subPct: s.subStatPer, subFlat: s.subStatAbs,
                     att: s.atkBase, attPct: s.atkPercent, dmg: s.dmg, boss: s.bossDmg,
                     statusDmg: s.statusAdditionalDmg,
-                    critDmg: s.criticalDmg, ied: s.ignoreDef,
+                    critDmg: s.criticalDmg, critRate: s.critical, ied: s.ignoreDef,
                     model: classStats(className).main === 'hp' ? 'hp' : 'normal',
                 }),
                 items: null,
@@ -1675,7 +1730,8 @@
                 subBase: cs.secondaryStat, subPct: cs.totalPercentSecondaryStat, subFlat: cs.additionalSecondaryStat,
                 att: cs.totalATT, attPct: cs.totalPercentATT, dmg: cs.damagePercent, boss: cs.bossDamagePercent,
                 statusDmg: cs.abnormalStatusDamage,
-                critDmg: cs.critDamagePercent, ied: ied <= 1 ? ied * 100 : ied, fd: cs.finalDamagePercent,
+                critDmg: cs.critDamagePercent, critRate: cs.critRatePercent,
+                ied: ied <= 1 ? ied * 100 : ied, fd: cs.finalDamagePercent,
                 model: cs.statModel,
             }),
             items,
@@ -1685,11 +1741,11 @@
     root.UpgradeEngine = Object.assign(root.UpgradeEngine || {}, {
         DEFAULT_PDR, DEFAULT_SETTINGS, parseMeso,
         normalizeStats, damageIndex, applyDelta, fdGain, sumDeltas, negateDelta,
-        CLASS_STATS, classStats, parsePotentialLine, linesDelta, flameDelta,
+        CLASS_STATS, classStats, usesViciousShot, VICIOUS_CD_PER_RATE, parsePotentialLine, linesDelta, flameDelta,
         KOREAN_CLASS, importBuild, normalizeItem, solveLinear, climbExpectation,
         collapsePool, cubeOutcomes, cubeThresholds,
         sfStep, sfSteps, sfDelta, flameOutcomes, recommend, buildPlan,
-        flameScore, itemContribution, restatItem, lineStatsForSlot, lineValuesFor, LINE_LABELS,
+        flameScore, itemContribution, restatItem, lineStatsForSlot, lineValuesFor, potentialPresets, LINE_LABELS,
         describeClass, STAT_NAMES, describeLines, weighIed, lineSetScorer, solveSkillIed, classSkillIedBreakdown, CDR_CURVES, cdrCurveAt, gearCdr, analysisStats, targetUnit, lineEquivalent, scoreThresholds, equivalenceLegend,
         GEAR_CATALOG, STANDARD_SLOTS, newItem,
         setCounts, setDelta, baseDelta, baseKnown, itemFull, swapDelta, swapDeltaMany, describeSetChange, swapOptions,

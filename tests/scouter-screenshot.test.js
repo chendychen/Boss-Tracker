@@ -56,7 +56,7 @@ describe('MapleScouter screenshot text', () => {
         const { stats, missing } = S.statsFromScouter(S.parseScouterText(BOWMASTER), 'Bowmaster');
         assert.deepEqual({ ...stats }, {
             mainBase: 7054, mainPct: 525, mainFlat: 31410, subBase: 4453, subPct: 256, subFlat: 570,
-            att: 3790, attPct: 106, dmg: 59, boss: 696, statusDmg: 22, critDmg: 142, ied: 98.94,
+            att: 3790, attPct: 106, dmg: 59, boss: 696, statusDmg: 22, critDmg: 142, critRate: 242, ied: 98.94,
         });
         assert.equal(missing.length, 0);
     });

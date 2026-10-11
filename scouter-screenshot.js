@@ -83,6 +83,7 @@
             boss: grab(/Boss\s+Damage\s+(\d[\d.,]*)/i),
             finalDamage: grab(/Final\s+Damage\s+(\d[\d.,]*)/i),
             critDmg: grab(/Critical\s+Damage\s+(\d[\d.,]*)/i),
+            critRate: grab(/Critical\s+Rate\s+(\d[\d.,]*)/i),
             ied,
             statusDmg: grab(/Additional\s+Status\s*D\S*\s+(\d[\d.,]*)/i),
             ier: grab(/Ignore\s+Elemental\s*Re\S*\s+(\d[\d.,]*)/i),
@@ -119,9 +120,12 @@
         put('statusDmg', parsed.statusDmg);
         put('critDmg', parsed.critDmg);
         put('ied', parsed.ied);
+        // Crit rate only counts for Vicious Shot classes, so only they need it.
+        const vicious = !!(engine && engine.usesViciousShot(cls));
+        if (vicious) put('critRate', parsed.critRate);
 
         const fields = ['mainBase', 'mainPct', 'mainFlat', 'subBase', 'subPct', 'subFlat',
-            'att', 'attPct', 'dmg', 'boss', 'statusDmg', 'critDmg', 'ied'];
+            'att', 'attPct', 'dmg', 'boss', 'statusDmg', 'critDmg', ...(vicious ? ['critRate'] : []), 'ied'];
         return { stats, missing: fields.filter(k => !(k in stats)) };
     }
 

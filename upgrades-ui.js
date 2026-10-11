@@ -60,7 +60,10 @@ function upgradeStatFields(className) {
         ['mainBase', `${main} (base)`], ['mainPct', `${main} %`], ['mainFlat', `${main} (flat, not % scaled)`],
         ['subBase', `${sub} (base)`], ['subPct', `${sub} %`], ['subFlat', `${sub} (flat)`],
         ['att', atk], ['attPct', `${atk} %`], ['dmg', 'Damage %'], ['boss', 'Boss damage %'],
-        ['statusDmg', 'Abnormal status damage %'], ['critDmg', 'Crit damage %'], ['ied', 'IED %'],
+        ['statusDmg', 'Abnormal status damage %'], ['critDmg', 'Crit damage %'],
+        // Past 100%, Vicious Shot turns crit rate into crit damage for these archers.
+        ...(UpgradeEngine.usesViciousShot(className) ? [['critRate', 'Crit rate % (Vicious Shot)']] : []),
+        ['ied', 'IED %'],
     ];
 }
 
@@ -355,6 +358,48 @@ function setUpgradeLine(slot, index, part, value) {
         }
         item.potLines = lines.slice(0, item.lineCount || 3);
     });
+}
+
+/** "DEX % 13 / DEX % 10 / Other" for a preset's lines. */
+function describePreset(preset) {
+    return preset.lines.map(l => (l.stat === 'other' ? 'any' : `${UpgradeEngine.LINE_LABELS[l.stat] || l.stat} ${l.value}`)).join(' / ');
+}
+
+/** A "Fill lines" picker of typical line sets; onPick receives the preset's index. */
+function renderPresetPicker(slot, itemLevel, className, onPick) {
+    const presets = UpgradeEngine.potentialPresets(slot, itemLevel, className);
+    if (!presets.length) return '';
+    return `
+        <div class="upg-line">
+            <span class="upg-sub">Fill</span>
+            <select onchange="if (this.value !== '') ${onPick}(this.value)">
+                <option value="">Typical lines…</option>
+                ${presets.map((p, i) => `<option value="${i}">${sanitizeInput(p.label)}: ${sanitizeInput(describePreset(p))}</option>`).join('')}
+            </select>
+        </div>`;
+}
+
+/** Fills an item's lines with a typical set; a legendary set makes the item legendary. */
+function applyPotentialPreset(slot, index) {
+    const build = getActiveCharacter().upgradeBuild;
+    editUpgradeItem(slot, item => {
+        const preset = UpgradeEngine.potentialPresets(slot, item.level, build.className)[+index];
+        if (!preset) return;
+        item.potLines = preset.lines.slice(0, item.lineCount || 3).map(l => ({ ...l }));
+        item.potTier = 'legendary';
+    });
+}
+
+function applyRecordPreset(index) {
+    if (!upgradeRecord) return;
+    const build = getActiveCharacter().upgradeBuild;
+    const item = build.items[upgradeRecord.slot];
+    const preset = UpgradeEngine.potentialPresets(item.slot || upgradeRecord.slot, item.level, build.className)[+index];
+    if (!preset) return;
+    const draft = upgradeRecord.draft;
+    draft.potLines = preset.lines.slice(0, draft.potLines.length || 3).map(l => ({ ...l }));
+    draft.potTier = 'legendary';
+    renderUpgradesContent();
 }
 
 function setUpgradeFlame(slot, key, value) {
@@ -1051,7 +1096,7 @@ function renderUpgradeItemEditor(character, build, slot, it) {
             </div></div>`;
     }
 
-    const lineRows = [];
+    const lineRows = [renderPresetPicker(slot, it.level, build.className, `applyPotentialPreset.bind(null, '${slot}')`)];
     for (let i = 0; i < lineCount; i++) {
         const line = (it.potLines || [])[i] || { stat: 'other', value: 0 };
         const choices = E.lineStatsForSlot(slot, build.className);
@@ -1281,6 +1326,7 @@ function renderUpgradeRecorder(character, build) {
                     ${['rare', 'epic', 'unique', 'legendary'].map(t => `<option ${t === draft.potTier ? 'selected' : ''}>${t}</option>`).join('')}
                 </select>
             </div>
+            ${renderPresetPicker(slot, item.level, cls, 'applyRecordPreset')}
             ${draft.potLines.map((line, i) => {
                 const choices = E.lineStatsForSlot(slot, cls);
                 if (!choices.includes(line.stat)) choices.unshift(line.stat);
