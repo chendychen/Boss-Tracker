@@ -402,6 +402,27 @@ function applyRecordPreset(index) {
     renderUpgradesContent();
 }
 
+/**
+ * The input for one flame stat. A weapon's ATT (MATT) flame is picked by
+ * tier, since its value depends on the weapon's type and level; a value that
+ * matches no tier is kept as "other".
+ */
+function flameInput(item, className, key, value, onchange) {
+    const cs = UpgradeEngine.classStats(className);
+    const attKey = cs.magic ? 'matt' : 'att';
+    const tiers = item.slot === 'weapon' && key === attKey ? UpgradeEngine.weaponFlameAttTiers(item, className) : [];
+    const v = +value || 0;
+    if (!tiers.length) {
+        return `<input class="upg-num upg-wide" type="number" value="${v || ''}" onchange="${onchange}">`;
+    }
+    const matched = !v || tiers.some(t => t.value === v);
+    return `<select onchange="${onchange}">
+            <option value="0" ${!v ? 'selected' : ''}>none</option>
+            ${tiers.map(t => `<option value="${t.value}" ${t.value === v ? 'selected' : ''}>Tier ${t.tier} · ${t.value}</option>`).join('')}
+            ${matched ? '' : `<option value="${v}" selected>${v} (no tier match)</option>`}
+        </select>`;
+}
+
 function setUpgradeFlame(slot, key, value) {
     editUpgradeItem(slot, item => {
         item.flames = { ...(item.flames || {}), [key]: parseFloat(value) || 0 };
@@ -1188,9 +1209,11 @@ function renderUpgradeItemEditor(character, build, slot, it) {
                     ${flameable ? flameFields.map(([k, label]) => `
                         <div class="upg-line">
                             <span class="upg-sub upg-flame-label">${label}</span>
-                            <input class="upg-num upg-wide" type="number" value="${(it.flames && it.flames[k]) || ''}"
-                                   onchange="setUpgradeFlame('${slot}', '${k}', this.value)">
+                            ${flameInput({ ...it, slot }, build.className, k, it.flames && it.flames[k],
+                                `setUpgradeFlame('${slot}', '${k}', this.value)`)}
                         </div>`).join('') : '<p class="upg-sub">This slot cannot be flamed.</p>'}
+                    ${slot === 'weapon' && !E.weaponFlameAttTiers({ ...it, slot }, build.className).length
+                        ? `<p class="upg-sub">Enter the weapon's base ${cs.magic ? 'MATT' : 'ATT'} above to pick its flame by tier.</p>` : ''}
                 </div>
             </div>
             <button class="prog-reset" onclick="removeUpgradeItem('${slot}')">Remove item</button>
@@ -1357,8 +1380,7 @@ function renderUpgradeRecorder(character, build) {
         body = fields.map(([k, label]) => `
             <div class="upg-line">
                 <span class="upg-sub upg-flame-label">${label}</span>
-                <input class="upg-num upg-wide" type="number" value="${draft.flames[k] || ''}"
-                       onchange="setRecordFlame('${k}', this.value)">
+                ${flameInput({ ...item, slot }, cls, k, draft.flames[k], `setRecordFlame('${k}', this.value)`)}
             </div>`).join('');
     }
 

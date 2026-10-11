@@ -776,3 +776,17 @@ describe('pocket items', () => {
         assert.equal(E.TABLES.cubePool('pocket', 160), null);
     });
 });
+
+describe('weapon flame tiers', () => {
+    const weapon = (name, level, baseStats) => ({ slot: 'weapon', name, level, set: 'Eternal', baseStats });
+    test('reproduce the flames on exported weapons, which depend on base attack', () => {
+        const at = (w, cls) => Object.fromEntries([...E.weaponFlameAttTiers(w, cls)].map(t => [t.tier, t.value]));
+        assert.equal(at(weapon('Genesis Weapon', 200, { att: 340 }), 'Demon Avenger')[7], 210);
+        assert.equal(at(weapon('Destiny Bow', 250, { att: 349 }), 'Bowmaster')[7], 251);
+        assert.equal(at(weapon('Genesis Weapon', 200, { att: 318 }), 'Pathfinder')[7], 196);
+        assert.equal(at(weapon('Genesis Staff', 200, { att: 251, matt: 406 }), 'Ice/Lightning')[6], 195);
+    });
+    test('need the base attack', () => {
+        assert.equal(E.weaponFlameAttTiers(weapon('Genesis Weapon', 200, null), 'Bowmaster').length, 0);
+    });
+});

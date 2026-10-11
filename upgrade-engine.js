@@ -1129,6 +1129,21 @@
      * stat % + 10 x (boss + damage) %. Demon Avenger scores HP / 17.5 as its
      * main stat and gets nothing from all stat %.
      */
+    /**
+     * The ATT (MATT for mages) a weapon's flame gives at each tier. It
+     * scales with the weapon's own base attack, so with its type, and its
+     * level. Advantaged weapons (Genesis, Destiny, boss drops) roll tiers 3-7,
+     * others 1-5. Empty when the base attack is unknown.
+     */
+    function weaponFlameAttTiers(item, className) {
+        const cs = classStats(className);
+        const base = (item && item.baseStats && +(cs.magic ? item.baseStats.matt : item.baseStats.att)) || 0;
+        if (!base) return [];
+        const adv = ctxAdvantaged(item);
+        return (adv ? [3, 4, 5, 6, 7] : [1, 2, 3, 4, 5])
+            .map(tier => ({ tier, value: T().flameWeaponAtt(base, item.level || 200, tier, adv) }));
+    }
+
     function flameScore(flames, className) {
         if (!flames) return 0;
         const cs = classStats(className);
@@ -1333,6 +1348,7 @@
         G('heart', 'Black Heart', 120, 'Pitched Boss', 0, [10, 77, 0], { sfKind: 'special', stars: 15, starCap: 15 }),
         G('heart', 'Plasma Heart', 130, 'None', 3e9, [10, 5, 0]),
         G('heart', 'Fairy Heart', 100, 'None', 0, [0, 0, 100], { starCap: 8 }),
+        G('heart', 'Lidium Heart', 30, 'None', 0, [3, 0, 50], { starCap: 5 }),
         G('badge', 'Crystal Ventus Badge', 130, 'Boss Accessory', 0, [10, 5, 0]),
         G('medal', 'Immortal Legacy', 250, 'Brilliant Boss', 0, [10, 10, 500, { boss: 10 }], { sfKind: 'special' }),
         // Given monthly to MVP Black rankers; lasts to the end of that month.
@@ -1762,7 +1778,7 @@
         KOREAN_CLASS, importBuild, normalizeItem, solveLinear, climbExpectation,
         collapsePool, cubeOutcomes, cubeThresholds,
         sfStep, sfSteps, sfDelta, flameOutcomes, recommend, buildPlan,
-        flameScore, itemContribution, restatItem, lineStatsForSlot, lineValuesFor, potentialPresets, LINE_LABELS,
+        flameScore, weaponFlameAttTiers, itemContribution, restatItem, lineStatsForSlot, lineValuesFor, potentialPresets, LINE_LABELS,
         describeClass, STAT_NAMES, describeLines, weighIed, lineSetScorer, solveSkillIed, classSkillIedBreakdown, CDR_CURVES, cdrCurveAt, gearCdr, analysisStats, targetUnit, lineEquivalent, scoreThresholds, equivalenceLegend,
         GEAR_CATALOG, STANDARD_SLOTS, newItem,
         itemSet, setCounts, setDelta, baseDelta, baseKnown, itemFull, swapDelta, swapDeltaMany, describeSetChange, swapOptions,
