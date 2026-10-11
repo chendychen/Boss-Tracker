@@ -294,6 +294,7 @@ function editUpgradeItem(slot, mutate, { swap = false, forceUpgrade = false } = 
     const before = build.items[slot] ? JSON.parse(JSON.stringify(build.items[slot])) : null;
     const itemsBefore = { ...build.items, [slot]: before };
     if (!before) delete itemsBefore[slot];
+    const statsBefore = build.stats;
     const item = build.items[slot] || UpgradeEngine.newItem(slot);
     mutate(item);
     build.items[slot] = item;
@@ -310,10 +311,26 @@ function editUpgradeItem(slot, mutate, { swap = false, forceUpgrade = false } = 
                 build.className, getCharLevel(character));
             if (swap) build.statsStale = true;
         }
+        carryUpgradeToProgression(character, build, itemsBefore, statsBefore);
     }
     saveToLocalStorage();
     renderUpgradesCharacterTabs();
     renderUpgradesContent();
+}
+
+/**
+ * An upgrade's final damage gain, with IED held at its new value (IED
+ * reaches Progression through the bosses' defense instead), carried into the
+ * character's calibrations until they are entered again.
+ */
+function carryUpgradeToProgression(character, build, itemsBefore, statsBefore) {
+    const settings = characterUpgradeSettings(character);
+    const after = UpgradeEngine.analysisStats(build, settings);
+    const before = UpgradeEngine.analysisStats({ ...build, items: itemsBefore, stats: statsBefore }, settings);
+    const pdr = settings.pdr;
+    const b = UpgradeEngine.damageIndex({ ...before, ied: after.ied }, pdr);
+    if (!b) return;
+    recordUpgradeGain(character, UpgradeEngine.damageIndex(after, pdr) / b, before.ied);
 }
 
 function setUpgradeItemField(slot, field, value) {
@@ -717,7 +734,10 @@ function applyScouterResults() {
     const hexa = value('scouterRes_hexa');
     const bd = value('scouterRes_bd');
     const ied = value('scouterRes_ied');
-    if (hexa > 0) character.hexaConverted = Math.round(hexa);
+    if (hexa > 0) {
+        character.hexaConverted = Math.round(hexa);
+        resetCalibAnchor(character, 'hexa');
+    }
     const fit = fitSkillIed(character, bd, ied);
     if (fit) {
         character.skillIed = fit.skillIed || null;

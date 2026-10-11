@@ -34,7 +34,8 @@ The server needs only Node, with no dependencies. It serves the app, reads and w
 ### Progression Tab
 - Models effective HP per boss: raw HP divided by level-advantage, Arcane/Sacred Force and boss defense multipliers
 - Level advantage, Arcane Force tiers and Sacred/Authentic Force scaling follow the [StrategyWiki formulas](https://strategywiki.org/wiki/MapleStory/Formulas), including penalties below the force floor
-- Boss defense uses `1 − PDR × (1 − IED)`, with PDR set per difficulty: Chosen Seren onward and Extreme Lotus are 380%, other earlier bosses 300%. IED is a per-character field defaulting to 98%
+- Boss defense uses `1 − PDR × (1 − IED)`, with PDR set per difficulty: Chosen Seren onward and Extreme Lotus are 380%, other earlier bosses 300%. IED comes from the Upgrades stat sheet (else a per-character field defaulting to 98%), combined with the class's skill IED
+- Upgrades recorded on the Upgrades tab after hexa converted or a calibrated run is entered carry their final damage gain into the predictions until that calibration is entered again; IED changes reach each boss through its own defense instead
 - Per-character level, Sacred Force and Arcane Force inputs
 - Derives your sustained damage by calibrating from a boss you already clear, a site clear %, or DPS set directly
 - Phase-by-phase pace against the 30:00 enrage timer, including per-phase monster level (Normal Kalos P1 is level 275 while P2 is 280, so they price differently)

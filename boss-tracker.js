@@ -248,6 +248,7 @@ function serializeCharacter(char) {
         crystalsDone: char.crystalsDone || null,
         blackMage: char.blackMage || null,
         hexaConverted: char.hexaConverted || null,
+        calibAnchors: char.calibAnchors || null,
         skillIed: (char.skillIed === null || char.skillIed === undefined || char.skillIed === '') ? null : char.skillIed,
         skillIedSource: char.skillIedSource || null,
         skillIedSkills: Array.isArray(char.skillIedSkills) ? char.skillIedSkills : null
@@ -300,6 +301,7 @@ function deserializeCharacter(char) {
         crystalsDone: char.crystalsDone || null,
         blackMage: char.blackMage || null,
         hexaConverted: char.hexaConverted || null,
+        calibAnchors: char.calibAnchors || null,
         skillIed: (char.skillIed === null || char.skillIed === undefined || char.skillIed === '') ? null : char.skillIed,
         skillIedSource: char.skillIedSource || null,
         skillIedSkills: Array.isArray(char.skillIedSkills) ? char.skillIedSkills : null
@@ -1724,8 +1726,76 @@ function getCharTotalIed(character) {
     return 100 * (1 - (1 - getCharIed(character) / 100) * (1 - skill / 100));
 }
 
+/** IED from the Upgrades tab's stat sheet, or null when it has none. */
+function statSheetIed(character) {
+    const stats = character.upgradeBuild && character.upgradeBuild.stats;
+    const v = stats ? parseFloat(stats.ied) : NaN;
+    return v > 0 ? v : null;
+}
+
+/**
+ * Stat-window IED: a what-if override, else the Upgrades stat sheet's, else
+ * the Progression field, else the default.
+ */
 function getCharIed(character) {
+    if (character.iedWhatIf !== undefined) return character.iedWhatIf;
+    const sheet = statSheetIed(character);
+    if (sheet !== null) return sheet;
     return (character.ied === null || character.ied === undefined) ? DEFAULT_IED : character.ied;
+}
+
+// ── Upgrades since a calibration ─────────────────────────────────────────────
+// A calibration (hexa converted, or a timed run / site %) is a measurement
+// of the character at one moment. Upgrades recorded on the Upgrades tab
+// afterwards raise its damage by their final damage gain, carried here until
+// the calibration is entered again. The calibration also keeps the stat-window
+// IED it was measured at: IED changes then reach the bosses through their own
+// defense (PDR differs by boss), so the carried gain leaves IED out. Skill IED
+// is a class estimate rather than gear, so both sides use its current value.
+const CALIB_FIELDS = ['calibBoss', 'calibMinutes', 'calibParty', 'manualDps', 'calibPercent'];
+
+function newCalibAnchor(character) {
+    return { statIed: getCharIed(character), gain: 1, since: localDate(), upgrades: 0 };
+}
+
+/** Starts a calibration afresh: kind is 'hexa' or 'calib'. */
+function resetCalibAnchor(character, kind) {
+    character.calibAnchors = { ...(character.calibAnchors || {}), [kind]: newCalibAnchor(character) };
+}
+
+/** Today's date in the user's time zone, as YYYY-MM-DD. */
+function localDate() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Carries an upgrade's gain (a damage ratio with IED held still) into every
+ * calibration the character has. `iedBefore` is the stat-window IED before
+ * the upgrade, for a calibration that predates anchors.
+ */
+function recordUpgradeGain(character, ratio, iedBefore) {
+    if (!(ratio > 0) || Math.abs(ratio - 1) < 1e-9) return;
+    const anchors = { ...(character.calibAnchors || {}) };
+    const has = { hexa: !!character.hexaConverted, calib: runDps(character) > 0 || siteDps(character) > 0 };
+    for (const kind of ['hexa', 'calib']) {
+        if (!has[kind] && !anchors[kind]) continue;
+        const a = anchors[kind] || { statIed: iedBefore, gain: 1, since: localDate(), upgrades: 0 };
+        anchors[kind] = { ...a, gain: a.gain * ratio, upgrades: (a.upgrades || 0) + 1 };
+    }
+    character.calibAnchors = anchors;
+}
+
+/** The damage multiplier from upgrades since a calibration (1 when none). */
+function upgradeGainSince(character, kind) {
+    const a = character.calibAnchors && character.calibAnchors[kind];
+    return a && a.gain > 0 ? a.gain : 1;
+}
+
+/** The character as it was when a calibration was measured, for its IED. */
+function anchoredCharacter(character, kind) {
+    const a = character.calibAnchors && character.calibAnchors[kind];
+    return a && isFinite(a.statIed) ? Object.assign({}, character, { iedWhatIf: a.statIed }) : character;
 }
 
 function getCharLevel(character) { return character.charLevel || 270; }
@@ -1933,14 +2003,14 @@ function capacityExecution(character, fallback) {
  * start of each cycle, so a short fight banks more than its average share.
  */
 function runDps(character) {
-    if (character.manualDps) return character.manualDps * 1e9;
+    if (character.manualDps) return character.manualDps * 1e9 * upgradeGainSince(character, 'calib');
     const boss = character.calibBoss, diff = character.calibDifficulty;
     const mins = parseFloat(character.calibMinutes);
     if (!boss || !diff || !(mins > 0)) return 0;
-    const eff = effectiveHP(boss, diff, character);
+    const eff = effectiveHP(boss, diff, anchoredCharacter(character, 'calib'));
     if (!eff) return 0;
     const party = Math.max(1, parseInt(character.calibParty, 10) || 1);
-    return (eff.total / party) / damageByTime(mins * 60, 1);
+    return (eff.total / party) / damageByTime(mins * 60, 1) * upgradeGainSince(character, 'calib');
 }
 
 /**
@@ -1957,10 +2027,10 @@ function scouterDps(character, baseName = 'Kalos the Guardian', difficulty = 'No
         difficulty = 'Normal';
     }
     if (cut === null) return 0;
-    const eff = effectiveHP(baseName, difficulty, character);
+    const eff = effectiveHP(baseName, difficulty, anchoredCharacter(character, 'hexa'));
     if (!eff) return 0;
     const exec = raw ? 1 : capacityExecution(character, 1);
-    return (eff.total * cut / 100) / damageByTime(BOSS_TIME_LIMIT, 1) / exec;
+    return (eff.total * cut / 100) / damageByTime(BOSS_TIME_LIMIT, 1) / exec * upgradeGainSince(character, 'hexa');
 }
 
 /**
@@ -1972,10 +2042,10 @@ function siteDps(character) {
     const boss = character.calibBoss, diff = character.calibDifficulty;
     const pct = parseFloat(character.calibPercent);
     if (!(pct > 0) || !boss || !diff) return 0;
-    const eff = effectiveHP(boss, diff, character);
+    const eff = effectiveHP(boss, diff, anchoredCharacter(character, 'calib'));
     if (!eff) return 0;
     return (eff.total * pct / 100) / damageByTime(BOSS_TIME_LIMIT, 1)
-        / capacityExecution(character, DEFAULT_EXECUTION);
+        / capacityExecution(character, DEFAULT_EXECUTION) * upgradeGainSince(character, 'calib');
 }
 
 /**
@@ -2022,8 +2092,20 @@ function characterDps(character) {
     return source ? sourceDps(character, source) : 0;
 }
 
+/** " · +2.4% from 3 upgrades since 2026-10-12", or '' when there are none. */
+function describeUpgradeGain(character, kind) {
+    const a = character.calibAnchors && character.calibAnchors[kind];
+    if (!a || !a.upgrades || Math.abs(a.gain - 1) < 1e-6) return '';
+    const pct = (a.gain - 1) * 100;
+    return ` · ${pct >= 0 ? '+' : ''}${pct.toFixed(1)}% from ${a.upgrades} upgrade${a.upgrades === 1 ? '' : 's'} since ${a.since}`;
+}
+
 /** One line describing a source, for the Progression summary. */
 function describeSource(character, source) {
+    return describeSourceBase(character, source) + describeUpgradeGain(character, source === 'scouter' ? 'hexa' : 'calib');
+}
+
+function describeSourceBase(character, source) {
     if (source === 'run') {
         if (character.manualDps) return `DPS set directly: ${character.manualDps}B/sec`;
         const party = parseInt(character.calibParty, 10) || 1;
@@ -2049,9 +2131,10 @@ function describeSource(character, source) {
  * threshold). 1.25 means the run lands 80% of the damage MapleScouter expects.
  */
 function measuredExecution(character) {
-    const run = runDps(character);
+    const run = runDps(character) / upgradeGainSince(character, 'calib');
     if (!(run > 0) || character.manualDps) return null;
-    const scouter = scouterDps(character, character.calibBoss, character.calibDifficulty, { raw: true });
+    const scouter = scouterDps(character, character.calibBoss, character.calibDifficulty, { raw: true })
+        / upgradeGainSince(character, 'hexa');
     return scouter > 0 ? scouter / run : null;
 }
 
@@ -2092,7 +2175,7 @@ function getProgressionAdjust(character) {
 function adjustedCharacter(character, adj) {
     return Object.assign({}, character, {
         charLevel: Math.max(200, Math.min(300, getCharLevel(character) + adj.level)),
-        ied: Math.max(0, Math.min(100, Math.round((getCharIed(character) + adj.ied) * 10) / 10))
+        iedWhatIf: Math.max(0, Math.min(100, Math.round((getCharIed(character) + adj.ied) * 10) / 10))
     });
 }
 
@@ -2169,6 +2252,8 @@ function updateProgressionField(field, value) {
     } else {
         character[field] = value === '' ? null : parseInt(value, 10);
     }
+    if (field === 'hexaConverted') resetCalibAnchor(character, 'hexa');
+    if (CALIB_FIELDS.includes(field)) resetCalibAnchor(character, 'calib');
     saveToLocalStorage();
     renderProgressionContent();
 }
@@ -2236,7 +2321,11 @@ function renderProgressionPanel() {
             ${field('Character level', 'charLevel', getCharLevel(character), 'min="200" max="300"')}
             ${field('Sacred Force (blank = capped)', 'sacredForce', character.sacredForce || '', 'min="0" max="1000" placeholder="capped"')}
             ${field('Arcane Force (blank = 1350)', 'arcaneForce', character.arcaneForce || '', 'min="0" max="2000" placeholder="1350"')}
-            ${field('IED % (stat window)', 'ied', getCharIed(character), 'min="0" max="100" step="0.1" placeholder="98"')}
+            ${statSheetIed(character) !== null
+                ? `<div class="prog-field"><label>IED % (from the Upgrades stat sheet)</label>
+                       <input type="number" value="${statSheetIed(character)}" disabled
+                              title="Change it on the Upgrades tab's stat sheet"></div>`
+                : field('IED % (stat window)', 'ied', getCharIed(character), 'min="0" max="100" step="0.1" placeholder="98"')}
             ${field('IED from skills % (blank = class default)', 'skillIed', character.skillIed ?? '', `min="0" max="99" step="0.1" placeholder="${getCharSkillIed(Object.assign({}, character, { skillIed: null }))}"`)}
         </div>
         <div class="prog-setup">
