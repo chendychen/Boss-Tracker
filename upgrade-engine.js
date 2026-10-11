@@ -1529,6 +1529,10 @@
         const starCost = next => (next.sfKind === 'ordinary' && next.stars
             ? sfSteps({ ...next, stars: 0 }, next.stars, s)(0, next.stars).cost : 0);
         const swappable = (slot, current) => current && !current.locked && slot !== 'weapon' && baseKnown(current);
+        // Moves players never make: CRA goes straight to Eternal, not through
+        // AbsoLab or Arcane Umbra.
+        const SKIPPED_MOVES = { CRA: new Set(['AbsoLab', 'Arcane Umbra']) };
+        const skipped = (fromSet, toSet) => !!(SKIPPED_MOVES[fromSet] && SKIPPED_MOVES[fromSet].has(toSet));
         const out = [];
 
         /**
@@ -1561,6 +1565,7 @@
             for (const entry of GEAR_CATALOG) {
                 if (entry.slot !== slot || !entry.base || entry.name === current.name || worn.has(entry.name)) continue;
                 if (entry.sfKind === 'special' || /badge|medal/.test(slot)) continue;
+                if (skipped(itemSet(current), entry.set)) continue;
                 const next = replacement(slot, current, entry);
                 const delta = swapDelta(items, slot, next, build.className, charLevel);
                 if (!delta) continue;
@@ -1663,7 +1668,7 @@
                 const slots = group.slots.filter(sl => items[sl] && itemSet(items[sl]) === fromSet && swappable(sl, items[sl]));
                 if (slots.length < 2) continue;
                 for (const toSet of group.to) {
-                    if (toSet === fromSet) continue;
+                    if (toSet === fromSet || skipped(fromSet, toSet)) continue;
                     // Each replacement once, and never one already worn: two
                     // pendant or ring slots cannot both take the same pitched piece.
                     const changes = {};

@@ -1433,6 +1433,13 @@ function renderUpgradeRecorder(character, build) {
  * can break even at a lower star than the full set, and which pieces only
  * pay together.
  */
+// Whole-set breakdowns the user opened; closed by default to save space.
+const openSwapSteps = new Set();
+
+function rememberSwapSteps(key, open) {
+    if (open) openSwapSteps.add(key); else openSwapSteps.delete(key);
+}
+
 function renderSwapSteps(o) {
     const firstBe = o.steps[0] && o.steps[0].breakEven;
     const losing = o.steps.filter(st => st.gain < 0);
@@ -1440,9 +1447,11 @@ function renderSwapSteps(o) {
         ? `The first piece breaks even at ${firstBe}★, sooner than the ${o.breakEven.stars}★ the whole set needs on every piece,
            because moving everything also gives up the old set's lower bonuses.`
         : '';
+    const key = `${o.from} → ${o.to}`;
     return `
-        <details class="upg-steps" ${losing.length ? 'open' : ''}>
-            <summary>Piece by piece${losing.length ? ' · one step loses on its own' : ''}</summary>
+        <details class="upg-steps" ${openSwapSteps.has(key) ? 'open' : ''} data-key="${sanitizeInput(key)}"
+                 ontoggle="rememberSwapSteps(this.dataset.key, this.open)">
+            <summary>Piece by piece (${o.steps.length} steps)${losing.length ? ' · one step loses on its own' : ''}</summary>
             ${lead ? `<p class="upg-sub">${lead}</p>` : ''}
             <ol>
                 ${o.steps.map(st => `

@@ -830,3 +830,14 @@ describe('accessory set swaps', () => {
         if (move.fdGain <= 0) assert.ok(move.paysAboveTarget && move.breakEven.stars > 22);
     });
 });
+
+describe('moves players never make', () => {
+    test('CRA is only offered as a move to Eternal', () => {
+        const cat = name => E.GEAR_CATALOG.find(g => g.name === name);
+        const item = (slot, name) => ({ ...E.newItem(slot, cat(name)), stars: 22 });
+        const build = { className: 'Hero', stats: { ...SHEET, att: 3000 },
+            items: { hat: item('hat', 'CRA Hat'), top: item('top', 'CRA Top'), bottom: item('bottom', 'CRA Bottom') } };
+        const opts = [...E.swapOptions(build, {}, { charLevel: 280 })];
+        assert.ok(!opts.some(o => /AbsoLab|Arcane Umbra/.test(o.to)), opts.map(o => o.to).join('; '));
+    });
+});
