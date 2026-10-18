@@ -56,6 +56,49 @@ describe('HEXA order', () => {
     });
 });
 
+// A made-up board in maplebot's shape: one level per row, FD compounding,
+// the origin's free level 1 left out.
+const BOARD = {
+    nodes: [{ name: 'Orig', type: 'Origin', start: 1 }, { name: 'Hexa Stat 1', type: 'Hexa Stat' }, { name: 'Mast', type: 'Mastery' },
+        { name: 'Asc', type: 'Origin' }, { name: 'Sol Janus', type: 'Common' }],
+    steps: [
+        { skill: 'Mast', to: 1, fd: 10, erda: 3, frag: 50 },
+        { skill: 'Mast', to: 2, fd: 10, erda: 1, frag: 15 },
+        { skill: 'Hexa Stat 1', to: 1, fd: null, erda: 5, frag: 324 },
+        { skill: 'Orig', to: 2, fd: 1, erda: 1, frag: 30 },
+    ],
+};
+
+describe('maplebot boards', () => {
+    test('levels join into steps, HEXA Stat nodes become levels, FD compounds', () => {
+        const s = [...H.boardSteps(BOARD)];
+        assert.deepEqual(s.map(x => `${x.name} ${x.from}->${x.to}`), ['Mast 0->2', 'HEXA Stat 0->1', 'Orig 1->2']);
+        assert.equal(s[0].frag, 65);
+        assert.ok(Math.abs(s[0].fd - 21) < 1e-9);
+        assert.deepEqual([...H.boardNodes(BOARD)].map(n => n.name), ['Orig', 'Asc', 'Mast', 'Sol Janus', 'HEXA Stat']);
+    });
+    test('progress by node name: partial steps owe their remaining levels; the origin starts at 1', () => {
+        assert.equal(H.boardProgress(BOARD, {}).next.name, 'Mast');
+        const p = H.boardProgress(BOARD, { Mast: 1 });
+        assert.equal(p.done, 0);
+        assert.equal(p.next.name, 'Mast');
+        assert.deepEqual([p.next.owedErda, p.next.owedFrag], [1, 15]);
+        assert.ok(Math.abs(p.fd - 10) < 1e-9);
+        assert.ok(Math.abs(p.fdLeft - (1.1 * 1.01 * 100 - 100)) < 1e-9);
+    });
+    test('node names find the guide\'s ids; the free origin is the Origin, the other the Ascent', () => {
+        const ids = H.boardNodeIds(BOARD, { ...CLS, origin: 'Orig', ascent: 'Point Zero', mastery: ['Mastery Skill', 'M2', 'M3', 'M4'] });
+        assert.deepEqual({ ...ids }, { Orig: 1, Mast: 2, 'Sol Janus': 12, 'HEXA Stat': 11, Asc: 10 });
+        // Two renamed nodes in one type are left alone rather than guessed.
+        const two = { ...BOARD, nodes: [...BOARD.nodes, { name: 'Other', type: 'Mastery' }] };
+        const ids2 = H.boardNodeIds(two, { ...CLS, mastery: ['Alpha Skill', 'Beta Skill'] });
+        assert.equal(ids2.Mast, undefined);
+        assert.equal(ids2.Other, undefined);
+        assert.equal(H.boardFor({ classes: { Bowmaster: BOARD } }, 'Bowmaster').name, 'Bowmaster');
+        assert.equal(H.boardFor({ classes: { Bowmaster: BOARD } }, 'Marksman'), null);
+    });
+});
+
 describe('reading the sources', () => {
     test('the guide script: nodes by class and orders, brackets in names included', () => {
         const js = 'x={Pathy:{ascentSkill:"Asc",boostSkills:["B1","B2"],commonSkills:["Sol Janus"],masterySkills:["Arts [Tian]","M2"],originSkill:"Orig"},'

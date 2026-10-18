@@ -325,7 +325,7 @@
         'Pathfinder': [["Archer's Essence", 30, 'P']],
         'Marksman': [['Marksmanship', 25, 'P'], ['Greater Empowered Arrows', 20, 'P'], ['Arrow Illusion', 30, 'P'], ['Greater Empowered Arrows (stacks)', 13, 'T'], ['Bullseye Shot', 20, 'T']],
         'Bowmaster': [['Marksmanship', 25, 'P'], ['Armor Break', 40, 'P'], ['Sharp Eyes - Guardbreak', 5, 'U']],
-        'Cannoneer': [['Cannon Overload', 20, 'P'], ["Pirate's Banner", 25, 'U']],
+        'Cannon Master': [['Cannon Overload', 20, 'P'], ["Pirate's Banner", 25, 'U']],
         'Buccaneer': [['Typhoon Crush', 40, 'P'], ["Pirate's Banner", 25, 'U']],
         'Corsair': [['Fullmetal Jacket', 20, 'P'], ["Pirate's Banner", 25, 'U']],
         'Dawn Warrior': [['Soul Element', 10, 'P'], ['Unpredictable', 30, 'P'], ['True Sight', 10, 'U'], ['Weapon Aura', 16, 'U']],

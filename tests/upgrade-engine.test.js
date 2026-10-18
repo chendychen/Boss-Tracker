@@ -863,3 +863,13 @@ describe('flames on a replacement', () => {
         assert.deepEqual({ ...E.equivalentFlames(E.newItem('ring1', cat('Superior Gollux Ring')), ring, 'Hero') }, {});
     });
 });
+
+describe('class names', () => {
+    test('renamed classes load under their current name', () => {
+        assert.equal(E.canonicalClass('Cannoneer'), 'Cannon Master');
+        assert.equal(E.canonicalClass('Bishop'), 'Bishop');
+        assert.equal(E.canonicalClass(null), null);
+        assert.ok(E.CLASS_STATS['Cannon Master']);
+        assert.equal(E.CLASS_STATS.Cannoneer, undefined);
+    });
+});

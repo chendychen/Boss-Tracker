@@ -193,7 +193,7 @@
             names.forEach(n => { t[n] = { main, sub, magic, also }; });
         set(['Hero', 'Paladin', 'Dark Knight', 'Dawn Warrior', 'Mihile', 'Aran', 'Kaiser',
              'Adele', 'Zero', 'Hayato', 'Ren', 'Erel Light', 'Blaster', 'Thunder Breaker',
-             'Buccaneer', 'Shade', 'Ark', 'Cannoneer', 'Demon Slayer'], 'str', 'dex');
+             'Buccaneer', 'Shade', 'Ark', 'Cannon Master', 'Demon Slayer'], 'str', 'dex');
         set(['Bowmaster', 'Marksman', 'Pathfinder', 'Wind Archer', 'Wild Hunter', 'Mercedes',
              'Kain', 'Corsair', 'Mechanic', 'Angelic Buster', 'Mo Xuan'], 'dex', 'str');
         set(['Night Lord', 'Night Walker', 'Phantom', 'Hoyoung', 'Khali'], 'luk', 'dex');
@@ -231,6 +231,10 @@
         'Mercedes', 'Wild Hunter', 'Kain']);
     const VICIOUS_CD_PER_RATE = 0.66 / 3;
     const usesViciousShot = className => VICIOUS_SHOT_CLASSES.has(className);
+
+    // Classes renamed in GMS: older names (saves, build exports) map to the current one.
+    const CLASS_RENAMES = { Cannoneer: 'Cannon Master' };
+    const canonicalClass = name => (name && CLASS_RENAMES[name]) || name || null;
 
     function classStats(className) {
         return CLASS_STATS[className] || { main: 'str', sub: 'dex', magic: false, also: [] };
@@ -1773,7 +1777,7 @@
         '데몬어벤져': 'Demon Avenger', '데몬슬레이어': 'Demon Slayer', '제논': 'Xenon',
         '나이트로드': 'Night Lord', '섀도어': 'Shadower', '듀얼블레이드': 'Dual Blade',
         '나이트워커': 'Night Walker', '팬텀': 'Phantom', '카데나': 'Cadena', '호영': 'Hoyoung',
-        '칼리': 'Khali', '바이퍼': 'Buccaneer', '캐논슈터': 'Cannoneer', '은월': 'Shade',
+        '칼리': 'Khali', '바이퍼': 'Buccaneer', '캐논슈터': 'Cannon Master', '은월': 'Shade',
         '스트라이커': 'Thunder Breaker', '아크': 'Ark', '블래스터': 'Blaster',
         '아크메이지(불,독)': 'Fire/Poison', '아크메이지(썬,콜)': 'Ice/Lightning', '비숍': 'Bishop',
         '루미너스': 'Luminous', '에반': 'Evan', '배틀메이지': 'Battle Mage', '플레임위자드': 'Blaze Wizard',
@@ -1828,7 +1832,7 @@
 
         if (json.type === 'maplescouter-manual-preset' && json.data && json.data.stat) {
             const s = json.data.stat;
-            const className = KOREAN_CLASS[s.myClass] || s.myClass || null;
+            const className = canonicalClass(KOREAN_CLASS[s.myClass] || s.myClass);
             return {
                 source: 'maplescouter',
                 ign: null,
@@ -1858,7 +1862,7 @@
         return {
             source: 'gms-upgrade-tracker',
             ign: build.name || build.id || build.ign || null,
-            className: build.selectedClass || null,
+            className: canonicalClass(build.selectedClass),
             level: +build.characterLevel || +build.level || null,
             sacredPower: +build.sacredPower || null,
             stats: normalizeStats({
@@ -1877,7 +1881,7 @@
     root.UpgradeEngine = Object.assign(root.UpgradeEngine || {}, {
         DEFAULT_PDR, DEFAULT_SETTINGS, parseMeso,
         normalizeStats, damageIndex, applyDelta, fdGain, sumDeltas, negateDelta,
-        CLASS_STATS, classStats, usesViciousShot, VICIOUS_CD_PER_RATE, parsePotentialLine, linesDelta, flameDelta,
+        CLASS_STATS, CLASS_RENAMES, canonicalClass, classStats, usesViciousShot, VICIOUS_CD_PER_RATE, parsePotentialLine, linesDelta, flameDelta,
         KOREAN_CLASS, importBuild, normalizeItem, solveLinear, climbExpectation,
         collapsePool, cubeOutcomes, cubeThresholds,
         sfStep, sfSteps, sfDelta, flameOutcomes, recommend, buildPlan,

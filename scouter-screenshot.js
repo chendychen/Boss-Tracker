@@ -29,7 +29,7 @@
         archmageicelightning: 'Ice/Lightning', archmageil: 'Ice/Lightning',
         archmagefirepoison: 'Fire/Poison', archmagefp: 'Fire/Poison',
         bowmaster: 'Bowmaster', windbreaker: 'Wind Archer', soulmaster: 'Dawn Warrior',
-        striker: 'Thunder Breaker', captain: 'Corsair', viper: 'Buccaneer', cannonshooter: 'Cannoneer',
+        striker: 'Thunder Breaker', captain: 'Corsair', viper: 'Buccaneer', cannonshooter: 'Cannon Master',
         flamewizard: 'Blaze Wizard', demonavengers: 'Demon Avenger',
     };
 

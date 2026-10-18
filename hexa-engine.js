@@ -141,7 +141,7 @@
     // Our class names where the guide's differ.
     const GUIDE_NAMES = {
         Bowmaster: 'Bow Master', 'Ice/Lightning': 'Arch Mage (Ice, Lightning)',
-        'Fire/Poison': 'Arch Mage (Fire, Poison)', Sia: 'Sia Astelle',
+        'Fire/Poison': 'Arch Mage (Fire, Poison)', Sia: 'Sia Astelle', 'Cannon Master': 'Cannoneer',
     };
     const letters = s => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
 
@@ -154,5 +154,161 @@
         return key ? { name: key, ...data.classes[key] } : null;
     }
 
-    root.HexaEngine = { COSTS, nodesFor, cost, steps, progress, planProgress, guideClass };
+    // ── Boards read from maplebot.io ────────────────────────────────────────
+    // builds/hexa-maplebot.json: per class, nodes by name and the order one
+    // level at a time, each level with its own Sol Erda, fragments and FD.
+    // maplebot's FD figures compound: the product of (1 + fd) over a class's
+    // levels is its class total. Its "Hexa Stat 1/2/3" (each to 1) are taken
+    // as HEXA Stat levels 1-3. The origin's level 1 is free, so its node
+    // carries start: 1 and the order begins past it.
+    const HEXA_STAT = 'HEXA Stat';
+    const statLevel = name => {
+        const m = /^hexa stat\s*(\d)$/i.exec(String(name).trim());
+        return m ? +m[1] : null;
+    };
+    const TYPE_ORDER = ['Origin', 'Mastery', 'Enhancement', 'Boost', 'Common', 'Hexa Stat'];
+
+    /** A board's nodes, grouped like the in-game matrix: [{ name, type, group, start, max, icon }]. */
+    function boardNodes(board) {
+        const out = [];
+        for (const n of (board && board.nodes) || []) {
+            if (statLevel(n.name) !== null) {
+                if (!out.some(x => x.name === HEXA_STAT)) out.push({ name: HEXA_STAT, type: 'Hexa Stat', group: HEXA_STAT, start: 0, max: 3, icon: n.icon || null });
+            } else out.push({ name: n.name, type: n.type, group: n.type, start: n.start || 0, max: 30, icon: n.icon || null });
+        }
+        const rank = n => { const i = TYPE_ORDER.indexOf(n.type); return i < 0 ? TYPE_ORDER.length : i; };
+        return out.map((n, i) => ({ ...n, i })).sort((a, b) => rank(a) - rank(b) || a.i - b.i).map(({ i, ...n }) => n);
+    }
+
+    /** A board's order as steps: consecutive levels on one node joined, each keeping its levels. */
+    function boardSteps(board) {
+        const out = [];
+        for (const s of (board && board.steps) || []) {
+            const k = statLevel(s.skill);
+            const name = k !== null ? HEXA_STAT : s.skill;
+            const to = k !== null ? k : s.to;
+            const level = { to, erda: s.erda || 0, frag: s.frag || 0, fd: s.fd || 0 };
+            const last = out[out.length - 1];
+            if (last && last.name === name && last.to === to - 1) {
+                last.to = to;
+                last.levels.push(level);
+            } else out.push({ name, from: to - 1, to, levels: [level] });
+        }
+        const types = new Map(boardNodes(board).map(n => [n.name, n.type]));
+        const fdOf = levels => levels.reduce((a, l) => a * (1 + l.fd / 100), 1) * 100 - 100;
+        return out.map(s => ({
+            ...s, type: types.get(s.name) || '',
+            erda: s.levels.reduce((a, l) => a + l.erda, 0),
+            frag: s.levels.reduce((a, l) => a + l.frag, 0),
+            fd: fdOf(s.levels),
+        }));
+    }
+
+    /**
+     * Where a character stands on a board, from its node levels by name. Each
+     * step gets a status and what is still owed on it, FD included; `fd` is
+     * what the levels taken so far add (compounded), `fdLeft` what the rest of
+     * the order adds on top.
+     */
+    function boardProgress(board, levels = {}) {
+        const starts = new Map(boardNodes(board).map(n => [n.name, n.start]));
+        const levelOf = name => {
+            const v = levels[name];
+            return v !== undefined && v !== null && v !== '' && Number.isFinite(+v) ? +v : (starts.get(name) || 0);
+        };
+        let erda = 0, frag = 0, gained = 1, left = 1, next = null;
+        const list = boardSteps(board).map((s, i) => {
+            const now = levelOf(s.name);
+            const status = now >= s.to ? 'done' : now > s.from ? 'partial' : 'todo';
+            const owedLevels = s.levels.filter(l => l.to > now);
+            s.levels.filter(l => l.to <= now).forEach(l => { gained *= 1 + l.fd / 100; });
+            const owed = {
+                erda: owedLevels.reduce((a, l) => a + l.erda, 0),
+                frag: owedLevels.reduce((a, l) => a + l.frag, 0),
+                fd: owedLevels.reduce((a, l) => a * (1 + l.fd / 100), 1) * 100 - 100,
+            };
+            erda += owed.erda;
+            frag += owed.frag;
+            left *= 1 + owed.fd / 100;
+            const step = { ...s, index: i, status, now, owedErda: owed.erda, owedFrag: owed.frag, owedFd: owed.fd, runningErda: erda, runningFrag: frag };
+            if (!next && status !== 'done') next = step;
+            return step;
+        });
+        return {
+            steps: list, next, done: list.filter(s => s.status === 'done').length,
+            owed: { erda, frag }, fd: gained * 100 - 100, fdLeft: left * 100 - 100,
+        };
+    }
+
+    /** Edit distance between two short strings. */
+    function distance(a, b) {
+        let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+        for (let i = 1; i <= a.length; i++) {
+            const row = [i];
+            for (let j = 1; j <= b.length; j++) {
+                row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+            }
+            prev = row;
+        }
+        return prev[b.length];
+    }
+
+    // maplebot's node types against the guide's.
+    const GUIDE_TYPE = { Origin: 'Origin', Mastery: 'Mastery', Enhancement: 'Boost', Boost: 'Boost', Common: 'Common' };
+
+    /**
+     * Ties a board's node names to the guide's node ids (for icons and levels
+     * entered against the guide). Names match by their letters: one starting
+     * or containing the other ("Cyclone" / "Calamitous Cyclone"), a typo
+     * apart, or sharing a word only one candidate has. The free origin is the
+     * guide's Origin and the other Origin node its Ascent. A node left over
+     * alone in its type takes the guide's one leftover; renamed skills beyond
+     * that stay unmatched rather than guessed.
+     */
+    function boardNodeIds(board, cls) {
+        const ids = {};
+        if (!cls) return ids;
+        const guide = nodesFor(cls).filter(g => g.id !== 11);
+        const nodes = boardNodes(board);
+        const used = new Set();
+        const take = (n, g) => { ids[n.name] = g.id; used.add(g.id); };
+        if (nodes.some(n => n.name === HEXA_STAT)) ids[HEXA_STAT] = 11;
+        const words = name => String(name).toLowerCase().split(/[^a-z]+/).filter(w => w.length >= 4);
+        const rules = [
+            (n, g) => { const a = letters(n.name), b = letters(g.name); return Math.min(a.length, b.length) >= 4 && (a.startsWith(b) || b.startsWith(a)); },
+            (n, g) => { const a = letters(n.name), b = letters(g.name); return Math.min(a.length, b.length) >= 4 && (a.includes(b) || b.includes(a)); },
+            (n, g) => distance(letters(n.name), letters(g.name)) <= 2,
+            (n, g) => words(n.name).some(w => words(g.name).includes(w)),
+        ];
+        for (const rule of rules) {
+            for (const n of nodes) {
+                if (n.name in ids) continue;
+                const hits = guide.filter(g => !used.has(g.id) && GUIDE_TYPE[n.type] === g.type && rule(n, g));
+                if (hits.length === 1) take(n, hits[0]);
+            }
+        }
+        for (const n of nodes.filter(x => x.type === 'Origin' && !(x.name in ids))) {
+            const g = guide.find(x => x.id === (n.start ? 1 : 10) && !used.has(x.id));
+            if (g) take(n, g);
+        }
+        for (const type of ['Origin', 'Mastery', 'Boost']) {
+            const left = nodes.filter(n => !(n.name in ids) && GUIDE_TYPE[n.type] === type);
+            const spare = guide.filter(g => !used.has(g.id) && g.type === type);
+            if (left.length === 1 && spare.length === 1) take(left[0], spare[0]);
+        }
+        return ids;
+    }
+
+    /** maplebot's board for one of our class names, or null. */
+    function boardFor(data, className) {
+        if (!data || !data.classes || !className) return null;
+        const key = Object.keys(data.classes).find(k => letters(k) === letters(className)
+            || letters(k) === letters(GUIDE_NAMES[className]));
+        return key ? { name: key, ...data.classes[key] } : null;
+    }
+
+    root.HexaEngine = {
+        COSTS, nodesFor, cost, steps, progress, planProgress, guideClass,
+        boardNodes, boardSteps, boardProgress, boardNodeIds, boardFor,
+    };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

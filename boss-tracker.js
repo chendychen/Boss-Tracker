@@ -297,8 +297,10 @@ function deserializeCharacter(char) {
         executionFactor: char.executionFactor || null,
         manualDps: char.manualDps || null,
         ied: (char.ied === null || char.ied === undefined) ? null : char.ied,
-        upgradeBuild: char.upgradeBuild || null,
-        className: char.className || (char.upgradeBuild && char.upgradeBuild.className) || null,
+        upgradeBuild: char.upgradeBuild
+            ? { ...char.upgradeBuild, className: UpgradeEngine.canonicalClass(char.upgradeBuild.className) }
+            : null,
+        className: UpgradeEngine.canonicalClass(char.className || (char.upgradeBuild && char.upgradeBuild.className)),
         usesCdrHat: char.usesCdrHat !== false,
         cdrCurve: Array.isArray(char.cdrCurve) && char.cdrCurve.length ? char.cdrCurve : null,
         crystalsDone: char.crystalsDone || null,
