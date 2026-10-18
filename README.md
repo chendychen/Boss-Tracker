@@ -55,6 +55,11 @@ The server needs only Node, with no dependencies. It serves the app, reads and w
 - Star force follows the current GMS system (Enhancement Mode, Safeguard, trace recovery, Shining Star Force); cubes use Glowing/Bright line odds; flames use the 3M meso reset
 - IED lines are ignored in cube targets by default (stacked IED has sharply diminishing returns); hat cooldown can follow a class curve (Pathfinder built in)
 
+### HEXA Tab
+- Per-character HEXA node levels against the class's progression order from [MapleTools' Hexa Matrix Guide](https://mapletools.app/tools/hexamatrix): the next step with its Sol Erda and fragment cost, a Done button, what is left of the order and of every node to max, and an estimate in weeks from your weekly income
+- Erel Light and Sia Astelle, whose boards work differently, follow community Google Sheets plans and are tracked by steps completed
+- **Fetch / Refresh from MapleTools** (or `node tools/hexa-orders.mjs`) reads the orders on demand into `builds/hexa-orders.json`, which stays on your computer
+
 ### Multi-Character Management
 - Add, rename, copy and delete characters; press Reorganise to drag them into a new order (it also sets which characters drop surplus crystals first)
 - Active character highlighted with tab navigation
@@ -76,6 +81,8 @@ The server needs only Node, with no dependencies. It serves the app, reads and w
 | `upgrade-engine.js` | Damage model, build import and upgrade ranking |
 | `upgrades-ui.js` | Upgrades tab |
 | `scouter-screenshot.js` | Reads a MapleScouter stat screenshot for the Upgrades tab |
+| `hexa-engine.js`, `hexa-ui.js` | HEXA tab: node costs, order progress and its page |
+| `tools/hexa-orders.mjs` | Fetches the HEXA orders into `builds/hexa-orders.json` |
 | `styles.css` | Shared stylesheet |
 | `tools/save-server.mjs` | Local server: serves the app, `saves/` and `builds/` |
 | `tools/import-save.mjs` | Moves an exported backup into `saves/` |

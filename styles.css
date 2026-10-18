@@ -1080,3 +1080,23 @@ tr.upg-steps-row > td { padding-top: 0; }
 .upg-steps strong { color: var(--cds-text-primary); text-transform: capitalize; }
 .upg-step-loss { color: var(--cds-text-primary); }
 .upg-loss { color: #fa4d56; font-variant-numeric: tabular-nums; }
+
+/* HEXA tab */
+.hexa-next { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-left: 3px solid #0f62fe; }
+.hexa-next-name { font-size: 1.2em; font-weight: 700; color: #f4f4f4; margin: 2px 0; display: flex; align-items: center; }
+.hexa-icon { width: 24px; height: 24px; vertical-align: middle; margin-right: 8px; border-radius: 4px; flex: none; }
+.hexa-next-name .hexa-icon { width: 32px; height: 32px; }
+.hexa-node > span { display: inline-flex; align-items: center; }
+.hexa-totals { display: flex; flex-wrap: wrap; gap: 8px 32px; margin-bottom: 10px; }
+.hexa-totals > div { display: flex; flex-direction: column; gap: 2px; }
+.hexa-income { flex-direction: row !important; align-items: center; gap: 6px !important; }
+.hexa-income input { width: 90px; background: #161616; color: #f4f4f4; border: 1px solid #525252; padding: 3px 6px; }
+.hexa-nodes { display: flex; flex-wrap: wrap; gap: 12px 28px; margin-top: 10px; }
+.hexa-group h4 { margin: 0 0 6px; color: #c6c6c6; font-size: 0.9em; }
+.hexa-node { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; min-width: 240px; }
+.hexa-node input { width: 56px; background: #161616; color: #f4f4f4; border: 1px solid #525252; padding: 3px 6px; }
+.hexa-table tr.hexa-done td { color: #6f6f6f; }
+.hexa-table tr.hexa-goal td { background: #262626; color: #a8a8a8; font-size: 0.85em; padding-top: 8px; }
+.hexa-table tr.hexa-current td { background: rgba(15, 98, 254, 0.18); }
+.hexa-table tr.hexa-partial td:first-child { box-shadow: inset 3px 0 0 #f1c21b; }
+.hexa-next-name .upg-sub { margin-left: 8px; font-weight: 400; font-size: 0.7em; }

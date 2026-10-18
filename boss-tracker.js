@@ -249,6 +249,9 @@ function serializeCharacter(char) {
         blackMage: char.blackMage || null,
         hexaConverted: char.hexaConverted || null,
         calibAnchors: char.calibAnchors || null,
+        hexaLevels: char.hexaLevels || null,
+        hexaIncome: char.hexaIncome || null,
+        hexaPlanDone: char.hexaPlanDone || 0,
         skillIed: (char.skillIed === null || char.skillIed === undefined || char.skillIed === '') ? null : char.skillIed,
         skillIedSource: char.skillIedSource || null,
         skillIedSkills: Array.isArray(char.skillIedSkills) ? char.skillIedSkills : null
@@ -302,6 +305,9 @@ function deserializeCharacter(char) {
         blackMage: char.blackMage || null,
         hexaConverted: char.hexaConverted || null,
         calibAnchors: char.calibAnchors || null,
+        hexaLevels: char.hexaLevels || null,
+        hexaIncome: char.hexaIncome || null,
+        hexaPlanDone: char.hexaPlanDone || 0,
         skillIed: (char.skillIed === null || char.skillIed === undefined || char.skillIed === '') ? null : char.skillIed,
         skillIedSource: char.skillIedSource || null,
         skillIedSkills: Array.isArray(char.skillIedSkills) ? char.skillIedSkills : null
@@ -744,6 +750,7 @@ function renderAllCharacterTabs() {
     renderCharacterTabs();
     renderProgressionCharacterTabs();
     renderUpgradesCharacterTabs();
+    renderHexaCharacterTabs();
 }
 
 /**
@@ -760,6 +767,8 @@ function renderActiveTab() {
         renderProgressionContent();
     } else if (activeMainTab === 'upgrades') {
         renderUpgradesContent();
+    } else if (activeMainTab === 'hexa') {
+        renderHexaContent();
     }
 }
 

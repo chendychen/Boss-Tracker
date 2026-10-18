@@ -22,6 +22,7 @@
             <button class="main-tab" onclick="switchMainTab('sellingStrategy')">💰 Selling Strategy</button>
             <button class="main-tab" onclick="switchMainTab('progression')">📈 Progression</button>
             <button class="main-tab" onclick="switchMainTab('upgrades')">⚙️ Upgrades</button>
+            <button class="main-tab" onclick="switchMainTab('hexa')">🔷 HEXA</button>
         </div>
         
         <div class="main-content">
@@ -77,6 +78,20 @@
 
                 <div id="upgradesContent"></div>
             </div>
+
+            <!-- HEXA Tab -->
+            <div id="hexaTab" class="tab-content">
+                <div class="character-section">
+                    <div class="character-controls">
+                        <button class="save-btn" onclick="manualSave()">💾 Save</button>
+                        <span class="save-status" id="saveStatus">✓ Saved!</span>
+                    </div>
+
+                    <div class="character-tabs" id="hexaCharacterTabs"></div>
+                </div>
+
+                <div id="hexaContent"></div>
+            </div>
         </div>
     </div>
 
@@ -84,6 +99,8 @@
     <script src="upgrade-engine.js"></script>
     <script src="scouter-screenshot.js"></script>
     <script src="upgrades-ui.js"></script>
+    <script src="hexa-engine.js"></script>
+    <script src="hexa-ui.js"></script>
     <script src="boss-tracker.js"></script>
 </body>
 </html>
