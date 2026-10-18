@@ -1947,16 +1947,20 @@ function bossPace(baseName, difficulty, character, avgDps) {
 // figure under Boss 380), adjusts it per boss for level and force (the value
 // printed on each boss card), and turns that into a cut %:
 //     cut % = (card / threshold) ^ k
-// Fitted 2026-10-05 on four characters spanning 58k-108k: k = 2.56, rms 2.2%,
-// about 3% on a character left out of the fit. Thresholds are the card value
-// needed for a 100% solo-min cut.
-const SCOUTER_K = 2.56;
+// Refitted 2026-10-18 on 74 cuts from six characters spanning 44k-108k (PF,
+// BM twice, Sair, I/L, MM, DrK twice): k = 2.51, rms 2.5%, each character
+// within 4% on average and about 2% when left out of the fit. The 2026-10-05
+// fit (k = 2.56) read 5-7% low below 55k. What remains is a per-class offset
+// of a few percent (BM's cards run hot, PF's cold), not a curve: one
+// character's own snapshots move with k near 2.35. Thresholds are the card
+// value needed for a 100% solo-min cut.
+const SCOUTER_K = 2.51;
 const SCOUTER_THRESHOLDS = {
-    'Kalos the Guardian|Normal': 51169, 'First Adversary|Normal': 56619, 'Lotus|Extreme': 67545,
-    'Malefic Star|Normal': 72921, 'Kaling|Normal': 73702, 'Kalos the Guardian|Chaos': 94629,
-    'Limbo|Normal': 101074, 'Black Mage|Extreme': 101734, 'Kaling|Hard': 111740,
-    'First Adversary|Hard': 113009, 'Chosen Seren|Extreme': 115938, 'Malefic Star|Hard': 129504,
-    'Limbo|Hard': 131038,
+    'Kalos the Guardian|Normal': 50308, 'First Adversary|Normal': 55886, 'Lotus|Extreme': 66851,
+    'Malefic Star|Normal': 72324, 'Kaling|Normal': 73069, 'Kalos the Guardian|Chaos': 94810,
+    'Limbo|Normal': 101270, 'Black Mage|Extreme': 102041, 'Kaling|Hard': 112108,
+    'First Adversary|Hard': 113392, 'Chosen Seren|Extreme': 116257, 'Malefic Star|Hard': 130117,
+    'Limbo|Hard': 131663,
 };
 // Card value = hexa converted x (level and force multiplier relative to their
 // maximum) ^ (1 / 2.35), which reproduces observed cards within ~1.5%.
