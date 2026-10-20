@@ -59,7 +59,7 @@ The server needs only Node, with no dependencies. It serves the app, reads and w
 - Per-character HEXA node levels against the class's progression order from [MapleTools' Hexa Matrix Guide](https://mapletools.app/tools/hexamatrix): the next step with its Sol Erda and fragment cost, a Done button, what is left of the order and of every node to max, and an estimate in weeks from your weekly income
 - Classes recorded from [maplebot.io's HEXA tracker](https://maplebot.io/tools/hexa-tracker) into `builds/hexa-maplebot.json` use that order instead, which is more current (Sol Hecate, Evolve VI) and carries each level's projected final damage: the next step's FD, FD gained so far and what the rest of the order adds (compounded); maplebot's skill names and icons (saved under `builds/hexa-icons/maplebot/`) are canon for those classes
 - Erel Light and Sia Astelle, whose boards work differently, follow community Google Sheets plans and are tracked by steps completed
-- **Fetch / Refresh from MapleTools** (or `node tools/hexa-orders.mjs`) reads the orders on demand into `builds/hexa-orders.json`, which stays on your computer
+- `node tools/hexa-orders.mjs` reads MapleTools' orders (and the Erel Light and Sia sheets) on demand into `builds/hexa-orders.json`, which stays on your computer
 
 ### Multi-Character Management
 - Add, rename, copy and delete characters; press Reorganise to drag them into a new order (it also sets which characters drop surplus crystals first)

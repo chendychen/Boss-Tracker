@@ -11,7 +11,6 @@
 // builds/hexa-orders.json once loaded: null (not yet), 'loading', 'missing',
 // 'error', or the data.
 let hexaData = null;
-let hexaError = '';
 let hexaShowAllSteps = false;
 // Whether the node levels section is open, once the user has opened or
 // closed it; until then it starts open. Kept across re-renders so entering a
@@ -41,32 +40,9 @@ function hexaBoard(character) {
     return HexaEngine.boardFor(hexaBoards, getCharClass(character));
 }
 
-/** Asks the local server to fetch the orders from MapleTools again, then the roster's icons. */
-async function refreshHexaOrders() {
-    hexaData = 'loading';
-    hexaError = '';
-    renderHexaContent();
-    try {
-        const res = await fetch('api/hexa-orders', { method: 'POST' });
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-        await loadHexaData();
-        const classes = [...new Set(characters.map(hexaGuide).filter(g => g && !g.plan).map(g => g.name))];
-        if (classes.length) {
-            await fetch('api/hexa-icons', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ classes }) });
-        }
-    } catch (e) {
-        hexaError = location.protocol.startsWith('http')
-            ? `Could not fetch from MapleTools: ${e.message}`
-            : 'Fetching needs the local server: run npm start and open the tracker from it.';
-    }
-    await loadHexaData();
-}
-
 /**
- * A node's icon, saved under builds/hexa-icons/ by the refresh (the guide's
- * own art; missing icons are simply left out).
+ * A node's icon, saved under builds/hexa-icons/ by tools/hexa-orders.mjs
+ * --icons (the guide's own art; missing icons are simply left out).
  */
 function hexaIcon(guideName, id) {
     const folder = String(guideName || '').toLowerCase().replace(/[^a-z]/g, '');
@@ -107,13 +83,16 @@ function setHexaClass(value) {
     renderHexaContent();
 }
 
-/** A node's level, keyed by the guide's node id or (maplebot boards) the node's name. */
-function setHexaLevel(id, value) {
+/**
+ * A node's level, keyed by the guide's node id or (maplebot boards) the
+ * node's name, held within the node's own cap (30, or 3 for HEXA Stat).
+ */
+function setHexaLevel(id, value, max = 30) {
     const character = getActiveCharacter();
     if (!character) return;
     const levels = { ...(character.hexaLevels || {}) };
     const v = parseInt(value, 10);
-    if (Number.isFinite(v)) levels[id] = Math.max(0, Math.min(30, v)); else delete levels[id];
+    if (Number.isFinite(v)) levels[id] = Math.max(0, Math.min(max, v)); else delete levels[id];
     character.hexaLevels = levels;
     saveToLocalStorage();
     renderHexaCharacterTabs();
@@ -170,6 +149,7 @@ function renderHexaContent() {
 
     const cls = getCharClass(character);
     const board = cls ? hexaBoard(character) : null;
+    const planned = !board && hexaGuide(character);
     const classes = Object.keys(UpgradeEngine.CLASS_STATS).sort();
     const head = `
         <div class="upg-card">
@@ -179,13 +159,12 @@ function renderHexaContent() {
                     ${classes.map(c => `<option ${cls === c ? 'selected' : ''}>${c}</option>`).join('')}
                 </select>
                 <span class="upg-sub">${board ? `Order and FD recorded from maplebot.io's HEXA tracker on ${sanitizeInput(hexaBoards.readAt || '')}`
+                    : planned && planned.plan
+                    ? `Plan from a community Google Sheet, fetched ${hexaData.fetchedAt.slice(0, 10)}`
                     : hexaData && typeof hexaData === 'object'
-                    ? `Orders from MapleTools' Hexa Matrix Guide (Erel Light and Sia from community sheets), fetched ${hexaData.fetchedAt.slice(0, 10)}`
+                    ? `Order from MapleTools' Hexa Matrix Guide, fetched ${hexaData.fetchedAt.slice(0, 10)}`
                     : 'Orders come from MapleTools\' Hexa Matrix Guide'}</span>
-                <button class="sell-link" onclick="refreshHexaOrders()" ${hexaData === 'loading' ? 'disabled' : ''}>
-                    ${hexaData && typeof hexaData === 'object' ? 'Refresh' : 'Fetch'} from MapleTools</button>
             </div>
-            ${hexaError ? `<p class="upg-note upg-shot-error">${sanitizeInput(hexaError)}</p>` : ''}
         </div>`;
 
     if (hexaData === 'loading' || hexaData === null) {
@@ -194,9 +173,9 @@ function renderHexaContent() {
     }
     if (board) { container.innerHTML = head + renderHexaBoard(character, board); return; }
     if (hexaData === 'missing') {
-        container.innerHTML = head + `<div class="upg-card upg-empty">No HEXA orders yet. Press <strong>Fetch from
-            MapleTools</strong> to read the Hexa Matrix Guide's orders into builds/hexa-orders.json (kept on this
-            computer). Or run <code>node tools/hexa-orders.mjs</code>.</div>`;
+        container.innerHTML = head + `<div class="upg-card upg-empty">No HEXA order for this class yet. Run
+            <code>node tools/hexa-orders.mjs</code> to read MapleTools' Hexa Matrix Guide into
+            builds/hexa-orders.json (kept on this computer).</div>`;
         return;
     }
     const guide = hexaGuide(character);
@@ -227,7 +206,7 @@ function renderHexaContent() {
                                 <span>${hexaIcon(guide.name, n.id)}${sanitizeInput(n.name)}</span>
                                 <input type="number" min="0" max="${n.max}" value="${levelOf(n)}"
                                        id="hexa-level-${n.id}" data-tab-group="hexa-level"
-                                       onchange="setHexaLevel(${n.id}, this.value)">
+                                       onchange="setHexaLevel(${n.id}, this.value, ${n.max})">
                             </label>`).join('')}
                     </div>`).join('')}
             </div>
@@ -345,7 +324,7 @@ function renderHexaBoard(character, board) {
                                 <span>${iconFor(n.name)}${sanitizeInput(n.name)}${inOrder.has(n.name) ? '' : ' <span class="upg-sub">(not in the order)</span>'}</span>
                                 <input type="number" min="0" max="${n.max}" value="${levels[n.name] !== undefined ? levels[n.name] : n.start}"
                                        id="hexa-level-b${gi}-${i}" data-tab-group="hexa-level"
-                                       data-node="${sanitizeInput(n.name)}" onchange="setHexaLevel(this.dataset.node, this.value)">
+                                       data-node="${sanitizeInput(n.name)}" onchange="setHexaLevel(this.dataset.node, this.value, ${n.max})">
                             </label>`).join('')}
                     </div>`).join('')}
             </div>

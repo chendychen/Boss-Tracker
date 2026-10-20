@@ -5,8 +5,6 @@
 // (a page opened as file:// cannot), and accepts POST /api/save to write the
 // current data back to saves/, keeping the most recent SAVE_LIMIT snapshots.
 // GET /api/builds lists the gear build files dropped into builds/.
-// POST /api/hexa-orders fetches MapleTools' HEXA orders into builds/, and
-// POST /api/hexa-icons ({ classes: [...] }) the node icons for those classes.
 //
 //   node tools/save-server.mjs [port]
 //
@@ -16,7 +14,6 @@ import { createServer } from 'node:http';
 import { readFile, writeFile, readdir, unlink, mkdir, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { refreshHexaOrders, downloadHexaIcons } from './hexa-orders.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const SAVE_DIR = join(ROOT, 'saves');
@@ -113,32 +110,6 @@ async function handle(req, res) {
             return sendJson(res, 200, { builds: await listBuilds() });
         } catch (err) {
             return sendJson(res, 500, { error: err.message });
-        }
-    }
-
-    if (req.method === 'POST' && url.pathname === '/api/hexa-orders') {
-        try {
-            const result = await refreshHexaOrders();
-            console.log(`HEXA orders: ${result.withOrder} of ${result.classes} classes`);
-            return sendJson(res, 200, result);
-        } catch (err) {
-            return sendJson(res, 502, { error: err.message });
-        }
-    }
-
-    if (req.method === 'POST' && url.pathname === '/api/hexa-icons') {
-        try {
-            let body = '';
-            for await (const chunk of req) {
-                body += chunk;
-                if (body.length > 64 * 1024) throw new Error('Request too large');
-            }
-            const classes = (JSON.parse(body || '{}').classes || []).filter(c => typeof c === 'string').slice(0, 80);
-            const result = await downloadHexaIcons(classes);
-            console.log(`HEXA icons: ${result.saved} saved, ${result.kept} kept, ${result.missing} missing`);
-            return sendJson(res, 200, result);
-        } catch (err) {
-            return sendJson(res, 502, { error: err.message });
         }
     }
 
