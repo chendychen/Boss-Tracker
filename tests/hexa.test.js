@@ -124,6 +124,28 @@ describe('reading the sources', () => {
         assert.equal(p.owed.frag, 34.7);
         assert.equal(p.levels['M1: Thing'], 9);
     });
+    test('plan skills: split stones add up, Shinestones cap at the plan top level, the origin starts at 1', () => {
+        const step = (skill, from, to) => ({ goal: 'g', skill, levels: '', from, to, erda: 1, frag: 1, fd: 0 });
+        const plan = { steps: [
+            step('Origin', 1, 5), step('Salad (1)', 0, 15), step('Salad (2)', 0, 6),
+            step('Shinestone #1', 0, 10), step('Shinestone #1', 10, 16), step('2% IED (R)', null, null),
+        ] };
+        const skills = [...H.planSkills(plan, { 'Salad (1)': 15, 'Salad (2)': 6, 'Shinestone #1': 10 })];
+        assert.deepEqual(skills.map(s => `${s.name} ${s.level}/${s.cap}`), ['Origin 1/30', 'Salad 21/30', 'Shinestone #1 10/16']);
+        assert.deepEqual([...skills[1].parts].map(p => p.level), [15, 6]);
+    });
+    test('Shinestone levels entered by hand replace the plan level, blanks fall back', () => {
+        const plan = { steps: [{ skill: 'Shinestone #1', from: 0, to: 10 }, { skill: 'Shinestone #1', from: 10, to: 16 },
+            { skill: 'M1: Ray', from: 0, to: 5 }] };
+        const level = (stones, levels = { 'Shinestone #1': 10 }) =>
+            [...H.planSkills(plan, levels, stones)].map(s => `${s.name} ${s.level}${s.manual ? '*' : ''}`).join(', ');
+        assert.equal(level({}), 'Shinestone #1 10, M1: Ray 0');
+        assert.equal(level({ 'Shinestone #1': 14 }), 'Shinestone #1 14*, M1: Ray 0');
+        assert.equal(level({ 'Shinestone #1': '' }), 'Shinestone #1 10, M1: Ray 0');
+        assert.equal(level({ 'M1: Ray': 9 }), 'Shinestone #1 10, M1: Ray 0');   // only stones take hand levels
+        const stone = [...H.planSkills(plan, { 'Shinestone #1': 10 }, { 'Shinestone #1': 14 })][0].parts[0];
+        assert.deepEqual([stone.level, stone.planned], [14, 10]);   // the plan's expectation stays visible
+    });
     test('CSV cells keep quoted commas and quotes', () => {
         assert.deepEqual(parseCsv('a,"b, c","d ""e"""\n1,2,3'), [['a', 'b, c', 'd "e"'], ['1', '2', '3']]);
     });

@@ -1095,6 +1095,14 @@ tr.upg-steps-row > td { padding-top: 0; }
 .hexa-group h4 { margin: 0 0 6px; color: #c6c6c6; font-size: 0.9em; }
 .hexa-node { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; min-width: 240px; }
 .hexa-node input { width: 56px; background: #161616; color: #f4f4f4; border: 1px solid #525252; padding: 3px 6px; }
+.hexa-plan-skill > strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hexa-plan-skill .upg-sub { display: inline; margin-left: 6px; }
+.hexa-plan-skill > strong .upg-sub { margin-left: 2px; font-weight: 400; }
+.hexa-stone-level { display: inline-flex; align-items: center; white-space: nowrap; }
+.hexa-stone-level input { width: 48px; }
+.hexa-stone-level .hexa-stone-expected { display: inline; margin-left: 10px; font-size: 0.75rem; }
+.hexa-behind { color: #ff8389; }
+.hexa-plan-skill.hexa-maxed > strong { color: #8fd18f; }
 .hexa-table tr.hexa-done td { color: #6f6f6f; }
 .hexa-table tr.hexa-goal td { background: #262626; color: #a8a8a8; font-size: 0.85em; padding-top: 8px; }
 .hexa-table tr.hexa-current td { background: rgba(15, 98, 254, 0.18); }

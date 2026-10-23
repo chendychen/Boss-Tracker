@@ -520,6 +520,16 @@ function clearUpgradeStatsStale() {
     renderUpgradesContent();
 }
 
+/**
+ * Settings saved before Shining Star Force had an automatic mode held a
+ * checkbox: a ticked box stays on, an unticked one becomes automatic.
+ */
+function normalizeUpgradeSettings(settings) {
+    if (settings.shiningStarForce === true) settings.shiningStarForce = 'on';
+    else if (settings.shiningStarForce === false || settings.shiningStarForce == null) settings.shiningStarForce = 'auto';
+    return settings;
+}
+
 function setUpgradeSetting(key, value) {
     const def = UpgradeEngine.DEFAULT_SETTINGS[key];
     if (typeof def === 'boolean') upgradeSettings[key] = !!value;
@@ -587,6 +597,16 @@ function buildUpgradePlan(character, recs) {
     return { plan, nextBoss, calibrated };
 }
 
+/** "On today" or the next event Sunday, for the Shining Star Force setting. */
+function shiningStarForceHint(s) {
+    const on = UpgradeEngine.shiningActive(s);
+    if (s.shiningStarForce !== 'auto') return `30% off, 30% fewer booms; ${on ? 'counted' : 'not counted'} in plans`;
+    if (on) return 'On today (every second Sunday): 30% off, 30% fewer booms';
+    const next = UpgradeEngine.nextShiningStarForce();
+    const day = next.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+    return `Next on ${day}, every second Sunday`;
+}
+
 function renderUpgradeSettings() {
     const s = upgradeSettings;
     const D = UpgradeEngine.DEFAULT_SETTINGS;
@@ -636,9 +656,16 @@ function renderUpgradeSettings() {
                 ${text('sfMaxStar', 'Star force target', 'for items without their own cap')}
                 ${text('mvpDiscount', 'MVP star force discount %', 'Silver 3, Gold 5, Diamond 10')}
                 ${text('cdrValue', 'FD % per second of cooldown', 'hat CDR lines; site default 0.7')}
+                <div class="prog-field">
+                    <label>Shining Star Force</label>
+                    <select onchange="setUpgradeSetting('shiningStarForce', this.value)">
+                        ${[['auto', 'Auto'], ['on', 'On'], ['off', 'Off']]
+                            .map(([v, l]) => `<option value="${v}" ${s.shiningStarForce === v ? 'selected' : ''}>${l}</option>`).join('')}
+                    </select>
+                    <span class="upg-hint">${shiningStarForceHint(s)}</span>
+                </div>
             </div>
             <div class="upg-checks">
-                ${check('shiningStarForce', 'Shining Star Force (30% off, 30% fewer booms)')}
                 ${check('safeguard', 'Safeguard 15→18★')}
             </div>
         </details>`;

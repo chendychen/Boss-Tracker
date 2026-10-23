@@ -10,6 +10,9 @@ const context = vm.createContext({});
 vm.runInContext(readFileSync(join(__dirname, '../upgrade-tables.js'), 'utf8'), context);
 vm.runInContext(readFileSync(join(__dirname, '../upgrade-engine.js'), 'utf8'), context);
 const E = context.UpgradeEngine;
+// Shining Star Force defaults to following the calendar; keep the other tests
+// independent of the day they run on.
+E.DEFAULT_SETTINGS.shiningStarForce = 'off';
 
 const near = (a, b, tol = 1e-6) => assert.ok(Math.abs(a - b) <= tol, `${a} ≉ ${b}`);
 
@@ -225,6 +228,24 @@ describe('star force costs and chains', () => {
         const shining = E.sfStep(item, 18, { ...E.DEFAULT_SETTINGS, sfProtection: '1111', shiningStarForce: true });
         near(shining.cost, plain.cost * 0.7, 1);
         near(shining.destroy, plain.destroy * 0.7, 1e-12);
+    });
+
+    test('Shining Star Force switches itself on every second Sunday from 25 Oct 2026', () => {
+        const at = iso => new Date(iso);
+        assert.equal(E.shiningStarForceOn(at('2026-10-25T00:00:00Z')), true);
+        assert.equal(E.shiningStarForceOn(at('2026-10-25T23:59:00Z')), true);
+        assert.equal(E.shiningStarForceOn(at('2026-10-26T00:00:00Z')), false);
+        assert.equal(E.shiningStarForceOn(at('2026-11-01T12:00:00Z')), false);   // the Sunday between
+        assert.equal(E.shiningStarForceOn(at('2026-11-08T12:00:00Z')), true);
+        assert.equal(E.shiningStarForceOn(at('2026-10-11T12:00:00Z')), true);    // and before the anchor
+        assert.equal(E.nextShiningStarForce(at('2026-10-22T09:00:00Z')).toISOString(), '2026-10-25T00:00:00.000Z');
+        assert.equal(E.nextShiningStarForce(at('2026-10-25T18:00:00Z')).toISOString(), '2026-10-25T00:00:00.000Z');
+        assert.equal(E.nextShiningStarForce(at('2026-10-26T01:00:00Z')).toISOString(), '2026-11-08T00:00:00.000Z');
+        const item = { slot: 'hat', level: 200, stars: 18, set: 'Arcane Umbra' };
+        const cost = now => E.sfStep(item, 18, { ...E.DEFAULT_SETTINGS, sfProtection: '1111', shiningStarForce: 'auto', now }).cost;
+        near(cost('2026-11-08T05:00:00Z'), cost('2026-11-01T05:00:00Z') * 0.7, 1);
+        assert.equal(E.shiningActive({ shiningStarForce: 'off' }, at('2026-10-25T05:00:00Z')), false);
+        assert.equal(E.shiningActive({ shiningStarForce: 'on' }, at('2026-10-26T05:00:00Z')), true);
     });
 
     test('safeguard premium is never discounted', () => {

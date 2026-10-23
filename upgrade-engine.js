@@ -22,7 +22,7 @@
         brightCube: 22e6,
         flameReset: 3e6,
         pdr: DEFAULT_PDR,
-        shiningStarForce: false,   // 30% off and 30% fewer booms while the event runs
+        shiningStarForce: 'auto',  // 'auto' (on during the event), 'on' or 'off': 30% off, 30% fewer booms
         safeguard: true,           // Safeguard 15→18★
         sfProtection: '1144',      // Enhancement Mode at 18, 19, 20, 21★ (the site's default)
         sfProtectionPitched: '4444',
@@ -547,11 +547,40 @@
         };
     }
 
+    // Shining Star Force runs every second Sunday (UTC), counted from
+    // Sunday 25 October 2026.
+    const SHINING_ANCHOR = Date.UTC(2026, 9, 25);
+    const DAY = 86400000;
+    const fortnightDay = date => {
+        const day = Math.floor((date.getTime() - SHINING_ANCHOR) / DAY);
+        return ((day % 14) + 14) % 14;
+    };
+
+    /** Whether Shining Star Force is running on the given date. */
+    const shiningStarForceOn = (date = new Date()) => fortnightDay(date) === 0;
+
+    /** The start (00:00 UTC) of the event day that is running now or comes next. */
+    function nextShiningStarForce(date = new Date()) {
+        const today = Math.floor(date.getTime() / DAY) * DAY;
+        return new Date(today + ((14 - fortnightDay(date)) % 14) * DAY);
+    }
+
+    /**
+     * Whether star force prices use the event: 'on' / true always, 'auto' on
+     * event days (settings.now pins the date, for tests), anything else never.
+     */
+    function shiningActive(settings, now) {
+        const mode = settings.shiningStarForce;
+        if (mode === true || mode === 'on') return true;
+        if (mode === 'auto') return shiningStarForceOn(now || (settings.now ? new Date(settings.now) : new Date()));
+        return false;
+    }
+
     /** One attempt at star s: { cost, success, destroy } with protection and events. */
     function sfStep(item, s, settings) {
         const tables = T();
         const base = tables.sfBaseCost(item.level, s);
-        const shining = !!settings.shiningStarForce;
+        const shining = shiningActive(settings);
         const discount = (shining ? 0.7 : 1) * (s <= 16 ? 1 - (settings.mvpDiscount || 0) / 100 : 1);
         const prot = sfProtection(item, settings);
         let [success, destroy] = tables.SF_RATES[s] || [0, 0];
@@ -1881,6 +1910,7 @@
     root.UpgradeEngine = Object.assign(root.UpgradeEngine || {}, {
         DEFAULT_PDR, DEFAULT_SETTINGS, parseMeso,
         normalizeStats, damageIndex, applyDelta, fdGain, sumDeltas, negateDelta,
+        shiningStarForceOn, nextShiningStarForce, shiningActive,
         CLASS_STATS, CLASS_RENAMES, canonicalClass, classStats, usesViciousShot, VICIOUS_CD_PER_RATE, parsePotentialLine, linesDelta, flameDelta,
         KOREAN_CLASS, importBuild, normalizeItem, solveLinear, climbExpectation,
         collapsePool, cubeOutcomes, cubeThresholds,

@@ -138,6 +138,50 @@
         return { steps: list, next: list[n] || null, done: n, owed: { erda, frag: Math.round(frag * 10) / 10 }, levels, fd };
     }
 
+    /**
+     * A sheet plan's skills and the level each has reached, given the levels
+     * its completed steps reached (planProgress().levels). A boost split into
+     * two stones, "Salad (1)" and "Salad (2)", is one skill whose level is the
+     * sum of its halves (15 each, 30 in all). Shinestones keep the highest
+     * level the plan takes them to as their cap; other skills cap at 30. A
+     * skill starts at the level its first step starts from (the Origin at 1).
+     * Shinestone upgrades are random, so `stones` ({ 'Shinestone #1': 14 })
+     * holds levels entered by hand; they replace the plan's level for those
+     * stones (manual: true).
+     * Each part also keeps `planned`, the level the completed steps reach.
+     * Returns [{ name, level, cap, stone, manual, parts: [{ skill, level, planned, cap, manual }] }]
+     * in the order the plan first touches them.
+     */
+    function planSkills(plan, levels = {}, stones = {}) {
+        const groups = new Map();
+        for (const s of plan.steps) {
+            if (s.to === null || s.to === undefined) continue;
+            const name = s.skill.replace(/\s*\(\d+\)$/, '');
+            const split = name !== s.skill;
+            if (!groups.has(name)) groups.set(name, { name, stone: /^shinestone/i.test(name), split, parts: new Map() });
+            const g = groups.get(name);
+            const part = g.parts.get(s.skill) || { skill: s.skill, start: s.from || 0, top: 0 };
+            part.top = Math.max(part.top, s.to);
+            g.parts.set(s.skill, part);
+        }
+        return [...groups.values()].map(g => {
+            const parts = [...g.parts.values()].map(p => {
+                const own = g.stone && stones[p.skill] !== undefined && stones[p.skill] !== null && stones[p.skill] !== '';
+                const planned = Math.max(p.start, levels[p.skill] || 0);
+                return {
+                    skill: p.skill, manual: own, planned,
+                    level: own ? Math.max(0, +stones[p.skill]) : planned,
+                    cap: g.stone ? p.top : g.split ? 15 : 30,
+                };
+            });
+            return {
+                name: g.name, stone: g.stone, parts, manual: parts.some(p => p.manual),
+                level: parts.reduce((a, p) => a + p.level, 0),
+                cap: g.stone ? parts.reduce((a, p) => a + p.cap, 0) : 30,
+            };
+        });
+    }
+
     // Our class names where the guide's differ.
     const GUIDE_NAMES = {
         Bowmaster: 'Bow Master', 'Ice/Lightning': 'Arch Mage (Ice, Lightning)',
@@ -309,6 +353,6 @@
 
     root.HexaEngine = {
         COSTS, nodesFor, cost, steps, progress, planProgress, guideClass,
-        boardNodes, boardSteps, boardProgress, boardNodeIds, boardFor,
+        boardNodes, boardSteps, boardProgress, boardNodeIds, boardFor, planSkills,
     };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

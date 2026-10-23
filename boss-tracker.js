@@ -252,6 +252,8 @@ function serializeCharacter(char) {
         hexaLevels: char.hexaLevels || null,
         hexaIncome: char.hexaIncome || null,
         hexaPlanDone: char.hexaPlanDone || 0,
+        hexaStones: char.hexaStones || {},
+        hexaRenames: char.hexaRenames || [],
         skillIed: (char.skillIed === null || char.skillIed === undefined || char.skillIed === '') ? null : char.skillIed,
         skillIedSource: char.skillIedSource || null,
         skillIedSkills: Array.isArray(char.skillIedSkills) ? char.skillIedSkills : null
@@ -310,6 +312,8 @@ function deserializeCharacter(char) {
         hexaLevels: char.hexaLevels || null,
         hexaIncome: char.hexaIncome || null,
         hexaPlanDone: char.hexaPlanDone || 0,
+        hexaStones: char.hexaStones || {},
+        hexaRenames: char.hexaRenames || [],
         skillIed: (char.skillIed === null || char.skillIed === undefined || char.skillIed === '') ? null : char.skillIed,
         skillIedSource: char.skillIedSource || null,
         skillIedSkills: Array.isArray(char.skillIedSkills) ? char.skillIedSkills : null
@@ -343,7 +347,7 @@ function adoptSavePayload(data) {
         || (characters.length ? characters[0].id : null);
     nextCharacterId = data.nextCharacterId
         || (Math.max(0, ...characters.map(c => c.id)) + 1);
-    if (data.upgradeSettings) upgradeSettings = { ...upgradeSettings, ...data.upgradeSettings };
+    if (data.upgradeSettings) upgradeSettings = normalizeUpgradeSettings({ ...upgradeSettings, ...data.upgradeSettings });
 }
 
 /**
@@ -423,7 +427,7 @@ function loadFromLocalStorage() {
             nextCharacterId = data.nextCharacterId;
             activeMainTab = data.activeMainTab || 'bossCrystals';
             globalBlackHeartSpares = data.globalBlackHeartSpares || 0;
-            if (data.upgradeSettings) upgradeSettings = { ...upgradeSettings, ...data.upgradeSettings };
+            if (data.upgradeSettings) upgradeSettings = normalizeUpgradeSettings({ ...upgradeSettings, ...data.upgradeSettings });
             return true;
         } catch (e) {
             console.error('Error loading saved data:', e);

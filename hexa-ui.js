@@ -108,6 +108,21 @@ function setHexaIncome(field, value) {
     renderHexaContent();
 }
 
+/**
+ * A Shinestone's level entered by hand (its upgrades are random); blank
+ * goes back to the level the plan's completed steps reach.
+ */
+function setHexaStone(skill, value) {
+    const character = getActiveCharacter();
+    if (!character) return;
+    const stones = { ...(character.hexaStones || {}) };
+    const v = parseInt(value, 10);
+    if (Number.isFinite(v)) stones[skill] = Math.max(0, Math.min(30, v)); else delete stones[skill];
+    character.hexaStones = stones;
+    saveToLocalStorage();
+    renderHexaContent();
+}
+
 /** Steps completed on a sheet plan (Erel Light, Sia Astelle). */
 function setHexaPlanDone(n) {
     const character = getActiveCharacter();
@@ -280,8 +295,29 @@ function renderHexaContent() {
     container.innerHTML = head + nextCard + totals + nodeCard + table;
 }
 
+/**
+ * Applies a board's renames (maplebot names that sat on the wrong node) to a
+ * character's saved levels, once each: every level moves from its old name
+ * to the new one at the same time, so swapped names don't collide.
+ */
+function migrateHexaRenames(character, board) {
+    const pending = (board.renames || []).filter(r => !(character.hexaRenames || []).includes(r.id));
+    if (!pending.length) return;
+    let levels = { ...(character.hexaLevels || {}) };
+    for (const { map } of pending) {
+        const moved = { ...levels };
+        Object.keys(map).forEach(old => delete moved[old]);
+        Object.entries(map).forEach(([old, now]) => { if (levels[old] !== undefined) moved[now] = levels[old]; });
+        levels = moved;
+    }
+    character.hexaLevels = levels;
+    character.hexaRenames = [...(character.hexaRenames || []), ...pending.map(r => r.id)];
+    saveToLocalStorage();
+}
+
 /** A board's node levels by name; levels entered against the guide's node ids carry over. */
 function hexaBoardLevels(character, board, ids) {
+    migrateHexaRenames(character, board);
     const saved = character.hexaLevels || {};
     const levels = {};
     for (const n of HexaEngine.boardNodes(board)) {
@@ -407,15 +443,66 @@ function hexaPlanIcon(character, skill) {
     return file ? `<img class="hexa-icon" src="builds/hexa-icons/maplebot/${encodeURI(file)}" alt="" loading="lazy" onerror="this.remove()">` : '';
 }
 
+/**
+ * A sheet plan's skills with their icons and the level the completed steps
+ * have reached; a boost split into two stones shows both halves. Names are
+ * maplebot's where known (planNames), with the sheet's own name beside them.
+ */
+function renderHexaPlanSkills(character, plan, levels) {
+    const skills = HexaEngine.planSkills(plan, levels, character.hexaStones || {});
+    if (!skills.length) return '';
+    const names = (hexaBoards && hexaBoards.planNames && hexaBoards.planNames[getCharClass(character)]) || {};
+    const stoneRow = (s, i) => {
+        const part = s.parts[0];
+        return `
+            <label class="hexa-node hexa-plan-skill ${s.level >= s.cap ? 'hexa-maxed' : ''}">
+                <span>${sanitizeInput(s.name)}${part.manual ? ' <span class="upg-sub">set by hand</span>' : ''}</span>
+                <span class="hexa-stone-level">
+                    <input type="number" min="0" max="30" value="${s.level}" id="hexa-stone-${i}" data-tab-group="hexa-stone"
+                           data-skill="${sanitizeInput(part.skill)}" onchange="setHexaStone(this.dataset.skill, this.value)"
+                           title="Your Shinestone's level; clear it to follow the plan">
+                    <span class="upg-sub">/ ${s.cap}</span>
+                    ${part.planned > 0 ? `<span class="hexa-stone-expected ${part.manual && part.level !== part.planned
+                        ? (part.level > part.planned ? 'upg-gain' : 'hexa-behind') : 'upg-sub'}"
+                        title="The level this plan expects from the steps marked done">expected ${part.planned}</span>` : ''}
+                </span>
+            </label>`;
+    };
+    const row = s => {
+        const shown = names[s.name] || s.name;
+        const halves = s.parts.length > 1 ? ` <span class="upg-sub">(${s.parts.map(p => p.level).join(' + ')})</span>` : '';
+        return `
+            <div class="hexa-node hexa-plan-skill ${s.level >= s.cap ? 'hexa-maxed' : ''}">
+                <span>${hexaPlanIcon(character, s.name)}${sanitizeInput(shown)}${shown !== s.name
+                    ? ` <span class="upg-sub">${sanitizeInput(s.name)}</span>` : ''}</span>
+                <strong>${s.level}<span class="upg-sub"> / ${s.cap}</span>${halves}</strong>
+            </div>`;
+    };
+    const group = (title, list, draw = row) => list.length ? `
+        <div class="hexa-group"><h4>${title}</h4>${list.map(draw).join('')}</div>` : '';
+    return `
+        <details class="upg-card" ${hexaNodesOpen !== false ? 'open' : ''} ontoggle="hexaNodesOpen = this.open">
+            <summary>Skill levels <span class="upg-sub">from the steps marked done</span></summary>
+            <div class="hexa-nodes">
+                ${group('Skills', skills.filter(s => !s.stone))}
+                ${group('Shinestones', skills.filter(s => s.stone), stoneRow)}
+            </div>
+        </details>`;
+}
+
 /** A sheet plan (Erel Light, Sia Astelle): the next step, totals and the steps by goal. */
 function renderHexaPlan(character, guide) {
     const plan = guide.plan;
     const p = HexaEngine.planProgress(plan, character.hexaPlanDone || 0);
     const next = p.next;
-    const levelsText = s => (s.to === null ? 'stone' : `${s.from} → ${s.to}`);
+    // A Shinestone already at or past a step's target (levels entered by hand).
+    const stones = character.hexaStones || {};
+    const reachedBy = s => (s.to !== null && /^shinestone/i.test(s.skill) && stones[s.skill] !== undefined
+        && +stones[s.skill] >= s.to ? +stones[s.skill] : null);
+    const levelsText = s => (s.to === null ? 'stone' : `${s.from} → ${s.to}`)
+        + (s.status !== 'done' && reachedBy(s) !== null ? ` <span class="upg-gain">already ${reachedBy(s)}</span>` : '');
     const nextWeeks = next ? hexaWeeks(character, next.erda, next.frag) : 0;
     const allWeeks = hexaWeeks(character, p.owed.erda, p.owed.frag);
-    const reached = Object.entries(p.levels);
 
     const nextCard = next ? `
         <div class="upg-card hexa-next">
@@ -426,6 +513,8 @@ function renderHexaPlan(character, guide) {
                     · ${next.erda} Sol Erda · ${next.frag.toLocaleString()} fragments${/shinestone/i.test(next.skill) ? ' (expected)' : ''}
                     ${next.fd ? `<span class="upg-gain">· +${next.fd.toFixed(2)}% FD</span>` : ''}
                     ${nextWeeks ? `<span class="upg-sub">· ${fmtWeeks(nextWeeks)}</span>` : ''}</div>
+                ${reachedBy(next) !== null ? `<div class="upg-gain">Your ${sanitizeInput(next.skill)} is already level
+                    ${reachedBy(next)}: press Done to skip this step.</div>` : ''}
             </div>
             <div class="upg-line">
                 ${p.done ? `<button class="sell-link" onclick="setHexaPlanDone(${p.done - 1})">Undo last</button>` : ''}
@@ -447,7 +536,6 @@ function renderHexaPlan(character, guide) {
                            onchange="setHexaIncome('frag', this.value)"></div>
             </div>
             <div class="sell-progress"><div style="width: ${(p.done / p.steps.length * 100).toFixed(1)}%"></div></div>
-            ${reached.length ? `<p class="upg-sub">Reached: ${reached.map(([k, v]) => `${sanitizeInput(k)} ${v}`).join(' · ')}</p>` : ''}
         </div>`;
 
     const shown = hexaShowAllSteps ? p.steps : p.steps.filter(s => s.status !== 'done').slice(0, 15);
@@ -485,5 +573,5 @@ function renderHexaPlan(character, guide) {
                 characters the sheet suggests favouring 1-erda stat stones and the free split-stone levels.</p>
         </div>`;
 
-    return nextCard + totals + table;
+    return nextCard + totals + renderHexaPlanSkills(character, plan, p.levels) + table;
 }
