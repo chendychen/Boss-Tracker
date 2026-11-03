@@ -199,6 +199,17 @@ describe('cubing', () => {
         assert.ok(th[1].rolls < th[0].rolls && th[1].gain < th[0].gain);
     });
 
+    test('gloves can roll two or three Critical Damage lines', () => {
+        const stats = E.normalizeStats({ mainBase: 5000, mainPct: 350, mainFlat: 20000, subBase: 1500, subPct: 80,
+            subFlat: 3000, att: 2500, attPct: 110, dmg: 60, boss: 350, critDmg: 90, critRate: 100, ied: 93 });
+        const out = E.cubeOutcomes({ stats, className: 'Bowmaster', charLevel: 285, currentLines: [],
+            pools: E.TABLES.cubePool('gloves', 200, 'legendary'), primeChance: E.TABLES.CUBES.bright.primeChance,
+            limits: E.TABLES.CUBE_LIMITS });
+        const share = n => out.filter(o => o.lines.filter(l => l.stat === 'critDmg').length === n).reduce((a, o) => a + o.p, 0);
+        assert.ok(share(2) > 0.002 && share(2) < 0.003, `two lines ${share(2)}`);   // about 1 in 390 on a Bright Cube
+        assert.ok(share(3) > 0);
+    });
+
     test('line limits drop and renormalise', () => {
         const allBoss = { prime: [{ stat: 'boss%', value: 40, w: 1 }, { stat: 'att%', value: 13, w: 1 }], nonPrime: [] };
         const out = E.cubeOutcomes({ ...base, pools: allBoss, lineCount: 3, primeChance: [1, 1, 1], limits: { boss: 2 } });
