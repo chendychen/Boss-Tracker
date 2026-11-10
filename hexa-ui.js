@@ -123,14 +123,50 @@ function setHexaStone(skill, value) {
     renderHexaContent();
 }
 
-/** Steps completed on a sheet plan (Erel Light, Sia Astelle). */
-function setHexaPlanDone(n) {
+/** The character's damage multiplier from HEXA so far (board FD, or the sheet plan's), 1 without either. */
+function hexaDamage(character) {
+    const board = hexaBoard(character);
+    if (board) {
+        const levels = hexaBoardLevels(character, board, HexaEngine.boardNodeIds(board, hexaGuide(character)));
+        return 1 + HexaEngine.boardProgress(board, levels).fd / 100;
+    }
+    const guide = hexaGuide(character);
+    return guide && guide.plan ? 1 + HexaEngine.planProgress(guide.plan, character.hexaPlanDone || 0).fd / 100 : 1;
+}
+
+/**
+ * A step marked Done or undone: `change` moves the levels, then the FD it
+ * adds is carried into Progression's calibrations, as an upgrade on the
+ * Upgrades tab is. Levels typed into the node boxes skip this: they are
+ * corrections, not progress since the last calibration. `count` is -1 for
+ * an undo.
+ */
+function hexaStep(change, count = 1) {
     const character = getActiveCharacter();
     if (!character) return;
-    character.hexaPlanDone = Math.max(0, n | 0);
+    const before = hexaDamage(character);
+    change(character);
+    recordUpgradeGain(character, hexaDamage(character) / before, getCharIed(character), count);
     saveToLocalStorage();
     renderHexaCharacterTabs();
     renderHexaContent();
+}
+
+function hexaBoardStep(name, level, count) {
+    hexaStep(c => { c.hexaLevels = { ...(c.hexaLevels || {}), [name]: level }; }, count);
+}
+
+/** Steps completed on a sheet plan (Erel Light, Sia Astelle). */
+function hexaPlanStep(n, count) {
+    hexaStep(c => { c.hexaPlanDone = Math.max(0, n | 0); }, count);
+}
+
+/** Whether Progression has a calibration for Done to carry FD into. */
+function hexaCarryNote(character) {
+    const calibrated = character.hexaConverted || runDps(character) > 0 || siteDps(character) > 0;
+    return `<p class="upg-sub">${calibrated
+        ? 'Done and Undo carry the FD into Progression until its next calibration; typing a level only corrects it.'
+        : 'Done will carry FD into Progression once this character has a calibration there.'}</p>`;
 }
 
 function toggleHexaSteps() {
@@ -369,6 +405,10 @@ function renderHexaBoard(character, board) {
     const next = p.next;
     const nextWeeks = next ? hexaWeeks(character, next.owedErda, next.owedFrag) : 0;
     const allWeeks = hexaWeeks(character, p.owed.erda, p.owed.frag);
+    // Undo takes the latest step reached back to where it started.
+    const last = [...p.steps].reverse().find(s => s.status === 'done');
+    const undo = last ? `<button class="sell-link" data-node="${sanitizeInput(last.name)}"
+        onclick="hexaBoardStep(this.dataset.node, ${last.from}, -1)">Undo last</button>` : '';
     const nextCard = next ? `
         <div class="upg-card hexa-next">
             <div>
@@ -379,8 +419,10 @@ function renderHexaBoard(character, board) {
                     ${next.owedFd > 0 ? `<span class="upg-gain">· ${fdText(next.owedFd)} FD</span>` : ''}
                     ${nextWeeks ? `<span class="upg-sub">· ${fmtWeeks(nextWeeks)}</span>` : ''}</div>
             </div>
-            <button class="save-btn" data-node="${sanitizeInput(next.name)}" onclick="setHexaLevel(this.dataset.node, ${next.to})">Done</button>
-        </div>` : `<div class="upg-card hexa-next"><strong>Order complete.</strong></div>`;
+            <div class="upg-line">${undo}
+                <button class="save-btn" data-node="${sanitizeInput(next.name)}" onclick="hexaBoardStep(this.dataset.node, ${next.to})">Done</button>
+            </div>
+        </div>` : `<div class="upg-card hexa-next"><strong>Order complete.</strong> ${undo}</div>`;
 
     const totals = `
         <div class="upg-card">
@@ -396,6 +438,7 @@ function renderHexaBoard(character, board) {
                            onchange="setHexaIncome('frag', this.value)"></div>
             </div>
             <div class="sell-progress"><div style="width: ${(p.done / p.steps.length * 100).toFixed(1)}%"></div></div>
+            ${hexaCarryNote(character)}
         </div>`;
 
     const upcoming = p.steps.filter(s => s.status !== 'done');
@@ -517,11 +560,11 @@ function renderHexaPlan(character, guide) {
                     ${reachedBy(next)}: press Done to skip this step.</div>` : ''}
             </div>
             <div class="upg-line">
-                ${p.done ? `<button class="sell-link" onclick="setHexaPlanDone(${p.done - 1})">Undo last</button>` : ''}
-                <button class="save-btn" onclick="setHexaPlanDone(${p.done + 1})">Done</button>
+                ${p.done ? `<button class="sell-link" onclick="hexaPlanStep(${p.done - 1}, -1)">Undo last</button>` : ''}
+                <button class="save-btn" onclick="hexaPlanStep(${p.done + 1})">Done</button>
             </div>
         </div>` : `<div class="upg-card hexa-next"><strong>Plan complete.</strong>
-            ${p.done ? `<button class="sell-link" onclick="setHexaPlanDone(${p.done - 1})">Undo last</button>` : ''}</div>`;
+            ${p.done ? `<button class="sell-link" onclick="hexaPlanStep(${p.done - 1}, -1)">Undo last</button>` : ''}</div>`;
 
     const totals = `
         <div class="upg-card">
@@ -536,6 +579,7 @@ function renderHexaPlan(character, guide) {
                            onchange="setHexaIncome('frag', this.value)"></div>
             </div>
             <div class="sell-progress"><div style="width: ${(p.done / p.steps.length * 100).toFixed(1)}%"></div></div>
+            ${hexaCarryNote(character)}
         </div>`;
 
     const shown = hexaShowAllSteps ? p.steps : p.steps.filter(s => s.status !== 'done').slice(0, 15);

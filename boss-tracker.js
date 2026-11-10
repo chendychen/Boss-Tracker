@@ -1787,16 +1787,17 @@ function localDate() {
 /**
  * Carries an upgrade's gain (a damage ratio with IED held still) into every
  * calibration the character has. `iedBefore` is the stat-window IED before
- * the upgrade, for a calibration that predates anchors.
+ * the upgrade, for a calibration that predates anchors. `count` is how the
+ * upgrade tally moves: -1 for an undo.
  */
-function recordUpgradeGain(character, ratio, iedBefore) {
+function recordUpgradeGain(character, ratio, iedBefore, count = 1) {
     if (!(ratio > 0) || Math.abs(ratio - 1) < 1e-9) return;
     const anchors = { ...(character.calibAnchors || {}) };
     const has = { hexa: !!character.hexaConverted, calib: runDps(character) > 0 || siteDps(character) > 0 };
     for (const kind of ['hexa', 'calib']) {
         if (!has[kind] && !anchors[kind]) continue;
         const a = anchors[kind] || { statIed: iedBefore, gain: 1, since: localDate(), upgrades: 0 };
-        anchors[kind] = { ...a, gain: a.gain * ratio, upgrades: (a.upgrades || 0) + 1 };
+        anchors[kind] = { ...a, gain: a.gain * ratio, upgrades: Math.max(0, (a.upgrades || 0) + count) };
     }
     character.calibAnchors = anchors;
 }
