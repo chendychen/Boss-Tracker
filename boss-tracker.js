@@ -287,6 +287,7 @@ async function loadSaveFile() {
 
     adoptSavePayload(data);
     if (data.exportDate) localStorage.setItem('bossTrackerSaveFileDate', data.exportDate);
+    autosave.markSaved();
     saveToLocalStorage();
     return true;
 }
@@ -325,6 +326,28 @@ function saveToLocalStorage() {
         upgradeSettings: upgradeSettings
     };
     localStorage.setItem('bossTrackerData', JSON.stringify(data));
+    autosaveCheck();
+}
+
+// Daily autosave (autosave.js). A change is a change to the account itself,
+// not to which tab or character is open.
+const autosave = Autosave.createAutosave({
+    storage: localStorage,
+    today: () => localDate(),
+    content: () => JSON.stringify({ characters: characters.map(serializeCharacter), upgradeSettings }),
+    write: async () => Boolean(await writeSaveFile()),
+});
+const AUTOSAVE_RECHECK = 60 * 60 * 1000;   // for a page left open past midnight, ms
+let autosaveReady = false;                 // off until the saved data has loaded
+
+/** Writes the save file if today's autosave is due; every edit passes through here. */
+function autosaveCheck() {
+    if (!autosaveReady) return;
+    autosave.check().then(saved => {
+        if (!saved) return;
+        console.log('Boss Tracker: autosaved to saves/');
+        showSaveStatus('✓ Autosaved');
+    });
 }
 
 function loadFromLocalStorage() {
@@ -352,16 +375,21 @@ function manualSave() {
     renderActiveTab();
     showSaveStatus();
     writeSaveFile().then(name => {
-        if (name) console.log(`Boss Tracker: wrote saves/${name}`);
+        if (!name) return;
+        autosave.markSaved();
+        console.log(`Boss Tracker: wrote saves/${name}`);
     });
 }
 
-function showSaveStatus() {
-    const status = document.getElementById('saveStatus');
-    status.classList.add('show');
-    setTimeout(() => {
-        status.classList.remove('show');
-    }, 2000);
+// Each tab has its own copy of the status next to its Save button.
+function showSaveStatus(text = '✓ Saved!') {
+    document.querySelectorAll('.save-status').forEach(status => {
+        status.textContent = text;
+        status.classList.add('show');
+        setTimeout(() => {
+            status.classList.remove('show');
+        }, 2000);
+    });
 }
 
 async function exportData() {
@@ -1733,6 +1761,9 @@ async function initialize() {
         if (!document.getElementById(activeMainTab + 'Tab')) activeMainTab = 'bossCrystals';
         switchMainTab(activeMainTab);
     }
+    autosaveReady = true;
+    autosaveCheck();
+    setInterval(autosaveCheck, AUTOSAVE_RECHECK);
 }
 
 // Start the app

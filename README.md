@@ -70,6 +70,7 @@ The server needs only Node, with no dependencies. It serves the app, reads and w
 ### Data Persistence & Portability
 - Auto-saves to browser `localStorage`
 - **Save** also writes `saves/latest.json` and keeps the last 10 snapshots when the local server is running
+- Autosaves to `saves/` once a day when the data has changed since the file was last written: on the day's first edit, or on opening the app with edits the file does not have yet. Opening the app without editing never writes the file
 - Export all data to a `.json` file, and `npm run import-save` to move an export into `saves/`
 - Import from a previously exported `.json` file
 
@@ -80,6 +81,7 @@ The server needs only Node, with no dependencies. It serves the app, reads and w
 | `boss_crystal_tracker.html` | Main app entry point |
 | `boss-engine.js` | Crystal prices and the weekly sale plan, boss HP tables and their dated changes, and the Progression damage model |
 | `boss-tracker.js` | Boss Crystals, Selling Strategy and Progression pages, and saving |
+| `autosave.js` | Decides when the daily autosave is due |
 | `upgrade-tables.js` | Star force, cube and flame game tables, with sources |
 | `upgrade-engine.js` | Damage model, build import and upgrade ranking |
 | `upgrades-ui.js` | Upgrades tab |
