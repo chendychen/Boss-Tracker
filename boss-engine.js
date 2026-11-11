@@ -363,7 +363,41 @@
     // is priced as the boss stood on the day it was measured, so an old run
     // keeps meaning what it meant, and MapleScouter's cuts keep the table their
     // thresholds were fitted on (SCOUTER_FIT_DATE).
-    const BOSS_CHANGES = [];
+
+    /** Patch-note rows of [boss, difficulties, % of HP removed] as a `bosses` map, all on one time limit. */
+    function hpCuts(limit, rows) {
+        const bosses = {};
+        rows.forEach(([boss, difficulties, cut]) => difficulties.split(', ').forEach(d => {
+            bosses[`${boss}|${d}`] = { hp: 1 - cut / 100, limit };
+        }));
+        return bosses;
+    }
+
+    const BOSS_CHANGES = [
+        // v.272 Maplayer One: every weekly and monthly boss on a 20:00 limit, with
+        // HP cut by the rounded percentages the notes list ("~32.1%"), taken here
+        // as the same cut on every phase. Hard Black Mage loses more than the rest.
+        // Source: nexon.com/maplestory/news/update/47132, Boss & Mob Changes.
+        { from: '2026-11-11', bosses: hpCuts(20 * 60, [
+            ['Lotus', 'Normal, Hard', 31.6], ['Lotus', 'Extreme', 32.2],
+            ['Damien', 'Normal, Hard', 31.5],
+            ['Guardian Angel Slime', 'Normal, Chaos', 31.4],
+            ['Lucid', 'Easy, Normal', 31.5], ['Lucid', 'Hard', 28.5],
+            ['Will', 'Easy, Normal, Hard', 32.9],
+            ['Gloom', 'Normal, Chaos', 32.3],
+            ['Verus Hilla', 'Normal, Hard', 31.4],
+            ['Darknell', 'Normal, Hard', 31.3],
+            ['Black Mage', 'Hard', 64.9], ['Black Mage', 'Extreme', 32.3],
+            ['Chosen Seren', 'Normal, Hard, Extreme', 32.1],
+            ['Kalos the Guardian', 'Easy, Normal, Chaos, Extreme', 33.2],
+            ['First Adversary', 'Easy, Normal, Hard, Extreme', 32.2],
+            ['Kaling', 'Easy, Normal, Hard, Extreme', 32.2],
+            ['Malefic Star', 'Normal, Hard', 32.0],
+            ['Limbo', 'Normal, Hard', 32.5],
+            ['Baldrix', 'Normal, Hard', 32.2],
+            ['Jupiter', 'Normal, Hard', 32.0],
+        ]) },
+    ];
 
     /**
      * One boss difficulty as it stood on a date (YYYY-MM-DD, today when left

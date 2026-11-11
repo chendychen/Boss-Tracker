@@ -38,7 +38,7 @@ The server needs only Node, with no dependencies. It serves the app, reads and w
 - Upgrades recorded on the Upgrades tab after hexa converted or a calibrated run is entered carry their final damage gain into the predictions until that calibration is entered again; IED changes reach each boss through its own defense instead
 - Per-character level, Sacred Force and Arcane Force inputs
 - Derives your sustained damage by calibrating from a boss you already clear, a site clear %, or DPS set directly
-- Phase-by-phase pace against each boss's own time limit (30:00 unless a patch set another), including per-phase monster level (Normal Kalos P1 is level 275 while P2 is 280, so they price differently)
+- Phase-by-phase pace against each boss's own time limit (20:00 since v.272 on 11 Nov 2026, which also cut boss HP by about a third; 30:00 before), including per-phase monster level (Normal Kalos P1 is level 275 while P2 is 280, so they price differently)
 - Boss retunes are dated: a patch that changes HP or time limits is one entry in `BOSS_CHANGES` (`boss-engine.js`). Projections use the bosses as they are today, a timed run or site clear % is priced as the boss stood on the day it was measured (the run's date field; blank means before any change), and MapleScouter's cuts keep the table their thresholds were fitted on
 - Models the 2-minute burst cadence (60% of damage in a ~25s window) and reports slack as **bursts you can waste**
 - Flags each boss as clearing, tight (under 2 bursts spare), short by N bursts, or blocked below the force floor

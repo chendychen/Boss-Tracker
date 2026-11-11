@@ -36,10 +36,10 @@ function bossValue(baseName, difficulty) {
     return bossData.find(b => b.baseName === baseName).difficulties[difficulty].value;
 }
 
-/** Runs `fn` with boss changes in force, then takes them back out. */
+/** Runs `fn` with these boss changes in place of the recorded ones, then puts those back. */
 function withChanges(changes, fn) {
-    B.BOSS_CHANGES.push(...changes);
-    try { return fn(); } finally { B.BOSS_CHANGES.length = 0; }
+    const recorded = B.BOSS_CHANGES.splice(0, B.BOSS_CHANGES.length, ...changes);
+    try { return fn(); } finally { B.BOSS_CHANGES.splice(0, B.BOSS_CHANGES.length, ...recorded); }
 }
 
 // ── Crystal prices ─────────────────────────────────────────────────────────
@@ -319,11 +319,11 @@ describe('calibrated run', () => {
         charLevel: 280, calibBoss: 'Chosen Seren', calibDifficulty: 'Normal', calibMinutes: 7, calibParty: 1,
     });
 
-    test('predicts its own boss at the time it was cleared in', () => {
+    test('predicts its own boss at the time it was cleared in', () => withChanges([], () => {
         const pace = B.predictPace(run, 'Chosen Seren', 'Normal');
         assert.equal(pace.source, 'run');
         near(pace.clearTime, 7 * 60, 1e-6);
-    });
+    }));
 
     test('a party clear splits the boss evenly', () => {
         near(B.runDps({ ...run, calibParty: 2 }), B.runDps(run) / 2);
@@ -353,11 +353,11 @@ describe('MapleScouter cut', () => {
     // Five levels over Normal Kalos with Sacred Force capped: the card is hexa converted itself.
     const atThreshold = makeCharacter({ charLevel: 285, hexaConverted: B.SCOUTER_THRESHOLDS['Kalos the Guardian|Normal'] });
 
-    test('a card on the threshold is a 100% cut, which just clears', () => {
+    test('a card on the threshold is a 100% cut, which just clears', () => withChanges([], () => {
         near(B.scouterCut(atThreshold, 'Kalos the Guardian', 'Normal'), 100);
         const pace = B.sourcePace(atThreshold, 'Kalos the Guardian', 'Normal', 'scouter');
         near(pace.clearTime, 1800, 1e-6);
-    });
+    }));
 
     test('the cut grows with hexa converted to the power k', () => {
         const stronger = { ...atThreshold, hexaConverted: atThreshold.hexaConverted * 1.1 };
@@ -420,8 +420,19 @@ describe('boss changes by date', () => {
         charLevel: 280, calibBoss: 'Chosen Seren', calibDifficulty: 'Normal', calibMinutes: 7, calibParty: 1,
     });
 
-    test('no changes are recorded until a patch is entered', () => {
-        assert.equal(B.BOSS_CHANGES.length, 0);
+    test('v.272 put every boss on a 20:00 limit from 11 Nov 2026, with about a third less HP', () => {
+        const hp = data => data.ph.reduce((sum, p) => sum + p[0], 0);
+        for (const { baseName, difficulty, fullName } of B.allCombatEntries()) {
+            const before = B.bossCombat(baseName, difficulty, '2026-11-10');
+            const after = B.bossCombat(baseName, difficulty, '2026-11-11');
+            assert.equal(before.limit, 30 * 60, fullName);
+            assert.equal(after.limit, 20 * 60, fullName);
+            const kept = hp(after) / hp(before);
+            if (fullName === 'Hard Black Mage') near(kept, 0.351);
+            else assert.ok(kept > 0.66 && kept < 0.72, `${fullName} keeps ${kept}`);
+        }
+        near(B.bossCombat('Chosen Seren', 'Normal', '2026-11-11').ph[0][0], 52.5e12 * 0.679);
+        near(B.bossCombat('Lucid', 'Hard', '2026-11-11').ph[0][0], 50.8e12 * 0.715);
     });
 
     test('a boss is read as it stood on the day asked for', () => withChanges(PATCH, () => {
