@@ -945,6 +945,28 @@ tr.upg-editor-row > td { background: var(--cds-layer-02); padding: var(--spacing
 .upg-collapsed .upg-plan-head { margin-bottom: 0; }
 .upg-collapsed .upg-filters { display: none; }
 
+/* ── Selling Strategy: crystals to drop, minimised until opened ───────────── */
+.sell-drops-toggle {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    width: 100%;
+    margin: 10px 0 12px;
+    padding: 10px 16px;
+    background: #393939;
+    border: none;
+    border-left: 3px solid #da1e28;
+    color: #c6c6c6;
+    font: inherit;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+}
+.sell-drops-toggle:hover { color: #f4f4f4; }
+.sell-drops-count { color: #da1e28; }
+.sell-drops-value { margin-left: auto; color: #da1e28; font-weight: 700; }
+.sell-drops-none { color: #24a148; margin: 10px 0 12px; }
+
 /* ── Selling Strategy: weekly crystal checklist ───────────────────────────── */
 .sell-tracker { margin-top: 32px; }
 .sell-tracker-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 20px; margin-bottom: 10px; }

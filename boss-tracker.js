@@ -1276,6 +1276,16 @@ function renderCrystalChecklist(counted) {
         </div>`;
 }
 
+// The crystals to drop start minimised: the weekly checklist below only lists
+// the ones that count, so the drop list is there to look up. Opening it lasts
+// until the page is reloaded.
+let sellDropsOpen = false;
+
+function toggleSellDrops() {
+    sellDropsOpen = !sellDropsOpen;
+    renderSellingStrategy();
+}
+
 function renderSellingStrategy() {
     const container = document.getElementById('sellingStrategyContent');
 
@@ -1323,15 +1333,22 @@ function renderSellingStrategy() {
             </div>`;
     }).join('');
 
-    const bodyContent = rows.length > 0
-        ? rows
-        : '<div style="color: #24a148; text-align: center; padding: 40px; font-size: 1.1em;">All crystals count — nothing to drop.</div>';
+    const dropped = overflow.reduce((sum, b) => sum + b.adjustedValue, 0);
+    const drops = rows.length > 0
+        ? `<button class="sell-drops-toggle" onclick="toggleSellDrops()" aria-expanded="${sellDropsOpen}">
+               <span class="sell-caret">${sellDropsOpen ? '▾' : '▸'}</span>Crystals to drop
+               <span class="sell-drops-count">${overflow.length}</span>
+               <span class="sell-drops-value">${formatValue(dropped)} not counted</span>
+           </button>
+           ${sellDropsOpen ? `
+               <p style="color: #999; margin-bottom: 20px;">Based on the ${limitLabel}. Drop these crystals — they don't count toward your total.</p>
+               ${rows}` : ''}`
+        : '<div class="sell-drops-none">All crystals count — nothing to drop.</div>';
 
     container.innerHTML = `
         <div style="padding: 30px;">
             <h2 style="color: #da1e28; margin-bottom: 6px; font-size: 1.6em;">💰 Selling Strategy</h2>
-            <p style="color: #999; margin-bottom: 20px;">Based on the ${limitLabel}. Drop these crystals — they don't count toward your total.</p>
-            ${bodyContent}
+            ${drops}
             ${renderCrystalChecklist(counted)}
         </div>`;
 }

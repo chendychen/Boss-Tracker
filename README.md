@@ -28,7 +28,7 @@ The server needs only Node, with no dependencies. It serves the app, reads and w
 
 ### Selling Strategy Tab
 - Identifies overflow boss crystals that exceed per-character or global limits
-- Groups by boss with character tags to help decide which crystals to drop
+- Groups by boss with character tags to help decide which crystals to drop; the list starts minimised to one line with the number of crystals to drop and their value
 - Weekly checklist per character, with a monthly Black Mage row (run this week, done this month, difficulty, party size); Black Mage is not one of the weekly picks on the Boss Crystals tab
 
 ### Progression Tab
